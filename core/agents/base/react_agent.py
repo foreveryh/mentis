@@ -120,37 +120,3 @@ class ReactAgent(BaseAgent):
                                               before_invoke=self.invoke,
                                               before_ainvoke=self.ainvoke)
         return self._agent
-        
-    
-    def invoke(self, state: Dict[str, Any]) -> Dict[str, Any]:
-        """同步调用入口 (真正的 Agent 执行逻辑)."""
-        print(f"=======[[DEBUG]] {self.name}.invoke() was called with state keys: {list(state.keys())}=========")
-        messages = state.get("messages", [])
-        if not messages:
-            print(f"[{self.name}] 暂无可打印消息。")
-        else:
-            count = 1
-            for msg in messages:  # 正序遍历消息
-                # 根据不同的消息类型，确定标记名称
-                if isinstance(msg, AIMessage):
-                    type_str = "AIMessage"
-                elif isinstance(msg, HumanMessage):
-                    type_str = "HumanMessage"
-                elif isinstance(msg, ToolMessage):
-                    type_str = "ToolMessage"
-                else:
-                    type_str = type(msg).__name__
-                print(f"第 {count} 条消息 - {type_str} (Name: {msg.name}):")
-                msg.pretty_print()
-                count += 1
-
-        # 1) 上下文注入
-        state = self._inject_context(state)
-        return state
-
-    async def ainvoke(self, state: Dict[str, Any]) -> Dict[str, Any]:
-        """异步调用入口."""
-        print(f"[[DEBUG]] {self.name}.ainvoke() was called with state keys: {list(state.keys())}")
-        # 1) 上下文注入
-        state = await self._inject_context(state)
-        return state

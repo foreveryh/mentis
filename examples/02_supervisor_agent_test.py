@@ -76,7 +76,7 @@ research_agent = ReactAgent(
 
 # 创建 SupervisorAgent 实例
 supervisor = SupervisorAgent(
-    agents=[research_agent, joke_agent],
+    agents=[joke_agent],
     model=model,
     # prompt=(
     #     "You are the overall supervisor. You manage two specialized agents:\n"

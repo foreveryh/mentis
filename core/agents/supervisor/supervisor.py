@@ -5,6 +5,7 @@ from langchain_core.language_models import BaseChatModel, LanguageModelLike
 from langchain_core.tools import BaseTool
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt.chat_agent_executor import (
+    create_react_agent,
     AgentState,
     Prompt,
     StateSchemaType,
@@ -179,7 +180,7 @@ def create_supervisor(
     if include_agent_name:
         model = with_agent_name(model, include_agent_name)
                 
-    _react_agent = ReactAgent(
+    supervisor = create_react_agent(
         name=supervisor_name,
         model=model,
         tools=all_tools,
@@ -188,11 +189,10 @@ def create_supervisor(
         response_format=response_format,
         debug=False,
     )
-    supervisor_agent = _react_agent.compile()
     # Build the multi-agent supervisor graph using the langgraph StateGraph setup
     builder = StateGraph(state_schema, config_schema=config_schema)
-    builder.add_node(supervisor_agent, destinations=tuple(agent_names) + (END,))
-    builder.add_edge(START, supervisor_agent.name)
+    builder.add_node(supervisor, destinations=tuple(agent_names) + (END,))
+    builder.add_edge(START, supervisor.name)
     for agent in agents:
         # If agent is a "ReactAgent" or similar
         if hasattr(agent, "get_agent") and callable(agent.get_agent):
@@ -207,6 +207,6 @@ def create_supervisor(
                 supervisor_name,
             ),
         )
-        builder.add_edge(agent.name, supervisor_agent.name)
+        builder.add_edge(agent.name, supervisor.name)
 
     return builder
