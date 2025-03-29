@@ -33,6 +33,8 @@ class BaseAgent:
         max_context_messages: Optional[int] = None,  # Limit number of recent messages
         max_context_tokens: Optional[int] = None,    # Limit total estimated tokens
         model_name: Optional[str] = "gpt-4o-mini", # Optional, used for future token estimation improvements
+        description: str = "No description provided."
+        
     ):
         if max_context_messages and max_context_tokens:
             raise ValueError("Only one of max_context_messages or max_context_tokens should be set.")
@@ -42,11 +44,13 @@ class BaseAgent:
         self.name = name
         self.model = model
         self.tools = tools or []
-        self.prompt = prompt
+        self.base_prompt = prompt
         self.checkpointer = checkpointer
         self.max_context_messages = max_context_messages
         self.max_context_tokens = max_context_tokens
         self.model_name = model_name or getattr(model, "model_name", DEFAULT_MODEL_NAME)
+        self.description = description
+        
         self._workflow: Optional[StateGraph] = None
         self._compiled_agent: Optional[CompiledGraph] = None # Stores the final compiled graph
 

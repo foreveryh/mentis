@@ -177,7 +177,6 @@ Important:
         self.checkpointer = checkpointer
         self.tools = tools or []
         self._workflow = None
-        self._agent = None
             
         # 生成基础提示词
         # _agents_prompt = self._generate_agents_prompt()
@@ -212,7 +211,7 @@ Important:
             agents=self.agents,
             model=self.model,
             tools=self.tools,
-            prompt=self.prompt,
+            prompt=self.base_prompt,
             state_schema=self.state_schema,
             supervisor_name=self.supervisor_name,
             output_mode=self.output_mode,

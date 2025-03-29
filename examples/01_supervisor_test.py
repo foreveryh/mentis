@@ -4,6 +4,8 @@ from langchain_openai import ChatOpenAI
 from langgraph.func import entrypoint, task
 from langgraph.graph import add_messages
 from dotenv import load_dotenv
+from core.utils.agent_utils import visualize_agent
+
 load_dotenv()  # 自动加载 .env 文件
 # 1. 初始化大模型
 model = ChatOpenAI(model="gpt-4o-mini")
@@ -66,6 +68,8 @@ research_agent = create_react_agent(
 # 让 Supervisor 在一次对话中可以多轮调用 joke_agent 和 research_expert
 # 这里的 prompt 告诉它：如果用户要“先讲笑话再查信息”，请先调用 joke_agent，再调用 research_expert，
 # 这样可以在同一个用户请求下顺序执行两个 Agent。
+# 这是最简单的示例，只是为了演示 create_supervisor 的基本用法，该方法没有被封装成一个 Agent
+# 也不具备 Planning 能力
 workflow = create_supervisor(
     [research_agent, joke_agent],
     model=model,
@@ -81,30 +85,13 @@ workflow = create_supervisor(
 )
 
 # 编译得到一个可调用的"App"
-app = workflow.compile()
-
-# 获取当前文件名（不含路径和扩展名）
-import os
-current_file = os.path.basename(__file__)
-file_name_without_ext = os.path.splitext(current_file)[0]
-graph_dir = os.path.join(os.path.dirname(__file__), "graphs")
-
-# 确保 graphs 目录存在
-os.makedirs(graph_dir, exist_ok=True)
-
-# 生成与文件名一致的图片名，并保存到 examples/graphs 目录
-image_data = app.get_graph().draw_mermaid_png()
-graph_path = os.path.join(graph_dir, f"{file_name_without_ext}.png")
-
-# 保存图片（如果已存在则覆盖）
-with open(graph_path, "wb") as f:
-    f.write(image_data)
-
-print(f"Image saved as {graph_path}")
+agent = workflow.compile()
+# 保存为一个可视化的图
+# visualize_agent(agent)
 ##############################################################################
 # 测试：单个用户请求想要 "先讲笑话，再查Apple的2024年人数" 并合并结果
 ##############################################################################
-result = app.invoke({
+result = agent.invoke({
     "messages": [
         {
             "role": "user",
