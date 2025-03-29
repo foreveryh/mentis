@@ -28,9 +28,9 @@ except ImportError:
 try:
     # 从你提供的 core.agents... 路径导入
     from core.agents.sb_supervisor_agent import SupervisorAgent # 你的 Supervisor 实现
-    from core.agents.supervisor.state_schema import PlanningAgentState # 包含 Plan 的状态
+    from core.agents.state_based_supervisor.state_schema import PlanningAgentState # 包含 Plan 的状态
     from core.agents.base.react_agent import ReactAgent # 你的 ReactAgent 实现
-
+    from core.llm.llm_manager import LLMManager # LLM 管理器
     # (如果你的子 Agent 有更具体的类，在这里导入它们)
     # 例如:
     # from core.agents.researcher import ResearchAgent
@@ -157,24 +157,21 @@ async def run_supervisor_test(supervisor_agent: SupervisorAgent, initial_state: 
 
 # --- Main Execution Block ---
 async def main():
-     # --- 初始化 LLM (确保 API Key 在环境中) ---
-     try:
-        # 从环境变量读取模型名称和 Provider (如果需要，默认为 OpenAI)
-        model_name = os.getenv("LLM_MODEL_NAME", "gpt-4o") 
-        # (可以加入选择 provider 的逻辑，但这里简化为直接用 ChatOpenAI)
-        if not ChatOpenAI: raise ImportError("ChatOpenAI not available.")
-        
-        print(f"Using LLM: {model_name}")
-        llm = ChatOpenAI(model=model_name, temperature=0)
-        # llm_creative = ChatOpenAI(model=model_name, temperature=0.7) # 如果 Supervisor 需要不同温度
-     except Exception as e:
-         print(f"Failed to initialize ChatOpenAI model: {e}")
-         print("Please check your API Key (e.g., OPENAI_API_KEY) and network connection.")
-         return
+    # --- 1. 初始化 LLM 管理器 (它会自动注册配置好的模型) ---
+    try:
+        model_manager = LLMManager()
+         # 可以选择打印一下注册了哪些模型
+        print("Registered Models:", json.dumps(model_manager.list_models(), indent=2))
+        print("Capability Mapping:", model_manager.list_capabilities())
+    except Exception as e:
+        print(f"Failed to initialize LLMManager: {e}")
+        return
 
-     # --- 实例化 Agents (使用一个简单的 ReactAgent 作为子 Agent 测试) ---
-     try:
-         
+     # --- 2. 实例化 Agents (使用 ModelManager 获取模型) ---
+    try:
+         # 获取默认模型用于基础任务
+        grok = model_manager.get_model("xai_grok") # 获取 ID 由 config 或第一个注册的决定
+        deepseek_v3 = model_manager.get_model("deepseek_v3") # 获取 DeepSeek 模型
          # 创建Tavily搜索工具
         tavily_search = TavilySearchResults(
             max_results=3,
@@ -192,7 +189,7 @@ async def main():
             name="research_expert", 
             tools=[tavily_search],
             description="Research expert with access to Tavily search.",
-            model=llm,
+            model=deepseek_v3,
             prompt=researcher_system_prompt,
          ) 
          
@@ -201,33 +198,33 @@ async def main():
          # --- 实例化 Supervisor (使用 PlanningAgentState) ---
         supervisor = SupervisorAgent(
              agents=all_agents,
-             model=llm, # Supervisor 使用的 LLM
+             model=deepseek_v3, # Supervisor 使用的 LLM
              state_schema=PlanningAgentState, # 明确 Supervisor 使用 Planning 状态
              # enable_planning=True, # 不再需要此参数，因为 state_schema 暗示了规划
              include_agent_name="inline" # 推荐
              # checkpointer=... # 添加 Checkpointer 以测试持久化
          )
-     except Exception as e:
+    except Exception as e:
          print(f"Failed to initialize agents or supervisor: {e}")
          import traceback
          traceback.print_exc()
          return
 
      # --- 获取用户输入 ---
-     topic = input("Please enter the initial request for the supervisor: ")
-     if not topic:
+    topic = input("Please enter the initial request for the supervisor: ")
+    if not topic:
          print("No request entered. Exiting.")
          return
 
      # --- 准备初始状态 (使用 PlanningAgentState) ---
-     initial_graph_state: PlanningAgentState = {
+    initial_graph_state: PlanningAgentState = {
          "messages": [HumanMessage(content=topic)], # 确保是 HumanMessage 对象
          "plan": None, # 初始没有计划
          "error": None
      }
 
      # --- 运行测试 ---
-     await run_supervisor_test(supervisor, initial_graph_state)
+    await run_supervisor_test(supervisor, initial_graph_state)
 
 
 if __name__ == "__main__":

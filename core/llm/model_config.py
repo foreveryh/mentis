@@ -39,7 +39,7 @@ SUPPORTED_MODELS_CONFIG = {
         "config_override": {}, # Key/URL 将从 env (XAI_API_KEY, XAI_BASE_URL) 加载
         "kwargs": {"temperature": 0.2}
     },
-    "deepseek_chat": { # 假设 ID 命名为 deepseek_chat
+    "deepseek_v3": { # 假设 ID 命名为 deepseek_chat
         "model_type": ModelType.DEEPSEEK,
         "model_name": "deepseek/deepseek-v3-0324", # DeepSeek Chat 模型 API 名
         "model_class": ChatOpenAI, # 使用兼容 OpenAI 的方式连接
