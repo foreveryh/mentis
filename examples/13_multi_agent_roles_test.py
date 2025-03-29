@@ -1,10 +1,10 @@
 from langgraph.prebuilt import create_react_agent
-from core.agents.supervisor_agent import SupervisorAgent
-from core.agents.research_agent import ResearchAgent
-from core.agents.coder_agent import CoderAgent
-from core.agents.reporter_agent import ReporterAgent
-from core.agents.designer_agent import DesignerAgent
-from core.agents.data_analyst_agent import DataAnalystAgent
+from core.agents.react_supervisor_agent import SupervisorAgent
+from core.agents.sub_agents.research_agent import ResearchAgent
+from core.agents.sub_agents.coder_agent import CoderAgent
+from core.agents.sub_agents.reporter_agent import ReporterAgent
+from core.agents.sub_agents.designer_agent import DesignerAgent
+from core.agents.sub_agents.data_analyst_agent import DataAnalystAgent
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.func import entrypoint, task
@@ -21,8 +21,7 @@ from contextlib import redirect_stdout, redirect_stderr
 load_dotenv()  # 自动加载 .env 文件
 
 # 1. 初始化大模型
-#model = ChatOpenAI(model="gpt-4o-mini")
-model = ChatOpenAI(model="grok-2-latest", base_url="https://api.x.ai/v1", api_key="xai-aLEuHipuXiTyDMlXZ4gNkXtRQ6VwmBBxizblJJYyA7O4aUZ5dMTIOg0CViXcV5qObF9Hksg3Wyxy1rIc")
+model = ChatOpenAI(model="gpt-4o-mini")
 # 设置日志捕获
 class LogCapture:
     def __init__(self):

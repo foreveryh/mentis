@@ -1,5 +1,5 @@
 from langgraph.prebuilt import create_react_agent
-from core.agents.supervisor_agent import SupervisorAgent
+from core.agents.react_supervisor_agent import SupervisorAgent
 from core.agents.research_agent import ResearchAgent
 from core.agents.base.react_agent import ReactAgent
 from langchain_openai import ChatOpenAI

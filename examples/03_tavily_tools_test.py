@@ -1,6 +1,6 @@
 import os
 from langgraph.prebuilt import create_react_agent
-from core.agents.supervisor_agent import SupervisorAgent
+from core.agents.react_supervisor_agent import SupervisorAgent
 from langchain_openai import ChatOpenAI
 from langgraph.func import entrypoint, task
 from langgraph.graph import add_messages

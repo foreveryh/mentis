@@ -11,10 +11,10 @@ from langgraph.prebuilt.chat_agent_executor import (
     StateSchemaType,
 )
 from langgraph.utils.runnable import RunnableCallable
-from core.agents.supervisor import create_supervisor
-from core.agents.supervisor.simple_planning_tool import SimplePlanningTool
+from core.agents.react_based_supervisor import create_supervisor
+from core.agents.react_based_supervisor.simple_planning_tool import SimplePlanningTool
 from core.agents.base.base_agent import BaseAgent
-from core.agents.supervisor.state_schema import PlanningAgentState
+from core.agents.react_based_supervisor.state_schema import PlanningAgentState
 import logging
 
 logger = logging.getLogger(__name__)

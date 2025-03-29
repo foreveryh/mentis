@@ -12,7 +12,7 @@ from langgraph.prebuilt import create_react_agent
 from langgraph.checkpoint.memory import MemorySaver
 from dotenv import load_dotenv
 from langchain_community.tools import TavilySearchResults
-from core.agents.supervisor_agent import SupervisorAgent
+from core.agents.react_supervisor_agent import SupervisorAgent
 
 load_dotenv()  # 自动加载 .env 文件
 
