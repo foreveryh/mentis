@@ -12,8 +12,6 @@ from langchain_core.tools import BaseTool
 # 导入预注册所需的工具
 from langchain_community.tools import (
     TavilySearchResults,
-    JinaSearch,
-    WikipediaQueryRun,
     ArxivQueryRun,
 )
 from langchain_community.agent_toolkits import FileManagementToolkit
@@ -77,14 +75,14 @@ def preregister_core_tools():
     except Exception as e:
         print(f"预注册文件系统工具失败: {e}")
     
-    # # 注册代码解释器工具
-    # try:
-    #     # Python REPL工具
-    #     python_repl = ExecPython()
-    #     register_tool(python_repl, ToolCategory.CODE_INTERPRETER)
-    #     print(f"已预注册工具: {python_repl.name} (类别: {ToolCategory.CODE_INTERPRETER.value})")
-    # except Exception as e:
-    #     print(f"预注册Python REPL工具失败: {e}")
+    # 注册代码解释器工具
+    try:
+        # Python REPL工具
+        python_repl = ExecPython()
+        register_tool(python_repl, ToolCategory.CODE_INTERPRETER)
+        print(f"已预注册工具: {python_repl.name} (类别: {ToolCategory.CODE_INTERPRETER.value})")
+    except Exception as e:
+        print(f"预注册Python REPL工具失败: {e}")
 
     # # 注册代码解释器工具
     # try:
@@ -95,21 +93,30 @@ def preregister_core_tools():
     # except Exception as e:
     #     print(f"预注册Python REPL工具失败: {e}")
     
-    # # 注册自定义工具 - FireCrawl工具
-    # try:
-    #     firecrawl_tool = FireCrawlTool()
-    #     register_tool(firecrawl_tool, ToolCategory.WEB_BROWSING)
-    #     print(f"已预注册工具: {firecrawl_tool.name} (类别: {ToolCategory.WEB_BROWSING.value})")
-    # except Exception as e:
-    #     print(f"预注册FireCrawl工具失败: {e}")
+    # 注册自定义工具 - FireCrawl工具
+    try:
+        firecrawl_tool = FireCrawlTool()
+        register_tool(firecrawl_tool, ToolCategory.WEB_BROWSING)
+        print(f"已预注册工具: {firecrawl_tool.name} (类别: {ToolCategory.WEB_BROWSING.value})")
+    except Exception as e:
+        print(f"预注册FireCrawl工具失败: {e}")
     
-    # # 注册E2B代码解释器工具
-    # try:
-    #     e2b_tool = E2BCodeInterpreterTool()
-    #     register_tool(e2b_tool, ToolCategory.CODE_INTERPRETER)
-    #     print(f"已预注册工具: {e2b_tool.name} (类别: {ToolCategory.CODE_INTERPRETER.value})")
-    # except Exception as e:
-    #     print(f"预注册E2B代码解释器工具失败: {e}")
+    # 注册E2B代码解释器工具
+    try:
+        e2b_tool = E2BCodeInterpreterTool()
+        register_tool(e2b_tool, ToolCategory.CODE_INTERPRETER)
+        print(f"已预注册工具: {e2b_tool.name} (类别: {ToolCategory.CODE_INTERPRETER.value})")
+    except Exception as e:
+        print(f"预注册E2B代码解释器工具失败: {e}")
+
+
+    from .replicate_flux_tool import ReplicateFluxImageTool, category 
+    try:
+        flux_tool = ReplicateFluxImageTool()
+        if flux_tool._is_available:
+            register_tool(flux_tool, category)
+    except Exception as e:
+        print(f"Failed to register ReplicateFluxImageTool: {e}")
 
 print("核心工具预注册完成")
 

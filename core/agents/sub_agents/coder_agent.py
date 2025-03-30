@@ -1,197 +1,104 @@
-from typing import Any, Dict, List, Optional, Union, Callable, TypedDict, Type
-
+# Refactored coder_agent.py
+from typing import Any, List, Optional, Union, Callable, Type
 from langchain_core.language_models import LanguageModelLike
-from langchain_core.messages import BaseMessage, SystemMessage
 from langchain_core.tools import BaseTool
-from langchain_core.runnables import Runnable
-from langgraph.checkpoint.base import BaseCheckpointSaver
-from langgraph.store.base import BaseStore
-from core.agents.base.react_agent import ReactAgent, AgentState
-import re
-import json
-from datetime import datetime
+from langchain_core.messages import SystemMessage
+from langgraph.types import Checkpointer
 
+from core.agents.base.react_agent import ReactAgent
+from core.tools.registry import get_tools_by_category, ToolCategory, get_tool_instance # Import get_tool_instance
 
-class CodeSnippet(TypedDict):
-    """Structured code snippet type"""
-    language: str  # Programming language
-    code: str  # Code content
-    description: str  # Description of what the code does
-    timestamp: str  # Creation timestamp
-
+import logging
+logger = logging.getLogger(__name__)
 
 class CoderAgent(ReactAgent):
-    """Coder agent implementation for code generation and problem-solving tasks.
-
-    Responsibilities:
-    - Generate code based on requirements
-    - Debug and fix issues in existing code
-    - Optimize code for performance and readability
-    - Explain code functionality and implementation details
-    - Provide code reviews and suggestions for improvement
-
-    Design Principles:
-    - Maintain separation of prompt template from initialization logic
-    - Enable flexible prompt customization through inheritance
-    - Follow PEP8 style guidelines for multi-line strings
-    - Store code snippets in structured format for better organization
     """
-
-    _PROMPT_TEMPLATE = """{current_date}
-
-You are a professional Software Engineer specialized in writing clean, efficient, and well-documented code.
-
-## REACT Methodology for Coding
-
-### Response Guidelines:
-- Your job is to run the appropriate tool first, then provide code generation, debugging, or optimization
-- Provide clear explanations of the code if asked
-- Maintain best practices in code style
-
-### Output Guidelines:
-- Share code snippets as needed
-- Keep explanations concise and relevant
-- Exclude references to data analysis or stock performance
-
-Available tools:
-{tools}
-"""
+    Coder Agent (Refactored)
+    - Interacts with a sandboxed Linux environment via code execution tools.
+    """
 
     def __init__(
         self,
-        name: str,
-        model: LanguageModelLike,
-        tools: Optional[List[BaseTool]] = None,
-        prompt: Optional[Union[str, SystemMessage, Callable, Runnable]] = None,
-        max_iterations: int = 5,
-        cache_enabled: bool = True,
-        response_format: Optional[Union[dict, Type[Any]]] = None,
-        checkpointer: Optional[BaseCheckpointSaver] = None,
-        store: Optional[BaseStore] = None,
-        interrupt_before: Optional[List[str]] = None,
-        interrupt_after: Optional[List[str]] = None,
-        debug: bool = False,
-        version: str = "v1",
+        name: str = "coder_expert",
+        model: LanguageModelLike = None,
+        tools: Optional[List[Union[BaseTool, Callable]]] = None,
+        checkpointer: Optional[Checkpointer] = None,
+        max_context_messages: Optional[int] = None,
+        max_context_tokens: Optional[int] = 100000, # Coding might need more context
+        **kwargs
     ):
-        """Initialize a coder agent with customizable components.
+        # 1. Define Description
+        description = "Writes, executes, tests, and debugs Python code and Linux shell commands within a secure sandboxed environment. Can install packages, manage files, and interact with the network."
 
-        Args:
-            name: Unique identifier for the agent instance.
-            model: Language model for code generation and problem-solving.
-            tools: Available toolset for coding tasks (default: None).
-            prompt: Custom instruction template (default: use class template).
-            max_iterations: Maximum number of iterations (default: 5).
-            cache_enabled: Whether to cache code snippets (default: True).
-            response_format: Optional response format for structured output.
-            checkpointer: Optional checkpoint saver for persisting agent state.
-            store: Optional storage object for cross-thread data sharing.
-            interrupt_before: Optional list of node names to interrupt before execution.
-            interrupt_after: Optional list of node names to interrupt after execution.
-            debug: Whether to enable debug mode.
-            version: LangGraph version ("v1" or "v2").
-        """
-        # Import tools registry to get code tools
-        from core.tools.registry import get_tools_by_category, ToolCategory
-        
-        # Initialize tools list if None
-        if tools is None:
-            tools = []
-            
-        # Get all registered code tools from the registry
+        # 2. Get Tools from Registry
+        agent_tools = []
+        default_tool_name = "e2b_code_interpreter" # Expected tool name
         try:
-            code_tools = get_tools_by_category(ToolCategory.CODE_INTERPRETER)
-            
-            # Add code tools that aren't already in the tools list
-            for code_tool in code_tools:
-                if not any(tool.name == code_tool.name for tool in tools if hasattr(tool, "name")):
-                    tools.append(code_tool)
-                    if debug:
-                        print(f"[{name}] Added code tool: {code_tool.name}")
+            code_tools = get_tools_by_category(ToolCategory.CODE_INTERPRETER) + get_tools_by_category(ToolCategory.FILE_SYSTEM)
+
+            agent_tools.extend(code_tools)
+            # Optionally add file system tools if not included in interpreter tool
+            # fs_tools = get_tools_by_category(ToolCategory.FILE_SYSTEM)
+            # agent_tools.extend(fs_tools)
+            print(f"[{name}] Loaded tools from registry: {[t.name for t in agent_tools if hasattr(t,'name')]}")
+            # Verify the main execution tool is present
+            if not any(getattr(t,'name', None) == default_tool_name for t in agent_tools):
+                 print(f"CRITICAL Warning: CoderAgent '{name}' is missing the primary '{default_tool_name}' tool!")
+                 # Attempt to get it specifically if missing?
+                 specific_tool = get_tool_instance(default_tool_name)
+                 if specific_tool: agent_tools.append(specific_tool)
+
         except Exception as e:
-            if debug:
-                print(f"[{name}] Failed to get code tools from registry: {str(e)}")
-        
-        # Get current date
-        from core.utils.timezone import get_current_time
-        current_date = get_current_time().strftime("%Y-%m-%d %H:%M:%S")
-        
-        # Format prompt template with tools information
-        formatted_prompt = self._PROMPT_TEMPLATE
-        if tools:
-            tools_str = "\n".join([f"- {tool.name}: {tool.description}" for tool in tools])
-            formatted_prompt = formatted_prompt.format(current_date=current_date, tools=tools_str)
-        else:
-            formatted_prompt = formatted_prompt.format(current_date=current_date, tools="No tools available.")
-        
+             print(f"Warning: Failed to get tools from registry for {name}: {e}")
+
+        if tools: # Merge extra tools
+             existing_names = {t.name for t in agent_tools if hasattr(t,'name')}
+             agent_tools.extend([t for t in tools if getattr(t, 'name', None) not in existing_names])
+
+        if not agent_tools:
+             print(f"CRITICAL Warning: CoderAgent '{name}' initialized with NO tools!")
+
+        # 3. Define System Prompt (using the capabilities)
+        tool_name_for_prompt = next((t.name for t in agent_tools if hasattr(t, 'name') and 'code' in t.name.lower()), default_tool_name) # Try to get actual tool name
+
+        base_prompt = f"""You are an expert Coder Agent interacting with a secure, sandboxed Linux environment provided by the '{tool_name_for_prompt}' tool. Your goal is to fulfill coding, file manipulation, or shell command requests by generating and executing appropriate code or commands within this sandbox.
+
+Available Tools:
+{self._format_tools_for_prompt(agent_tools)}
+- **{tool_name_for_prompt}**: Executes Python code or shell commands within the sandboxed Linux environment. Returns stdout, stderr, execution errors, and potentially file outputs or structured results (like image data). To run shell commands, generate Python code that uses the 'subprocess' module OR if the tool directly supports it, prefix the command with '!'. Always prefer generating Python code for complex shell operations or when needing output capture.
+
+Key Capabilities of the Sandbox Environment (via the tool):
+- Execute Python 3 code.
+- Install Python packages using pip (generate code like `import subprocess; subprocess.run(['pip', 'install', 'requests'], check=True)`).
+- Run standard Linux shell commands (e.g., `ls`, `pwd`, `mkdir`, `curl`, `git`, etc. using Python's subprocess).
+- Access and manipulate a persistent filesystem within the sandbox (typically starting in `/home/user/` or `/`). Create, read, write, delete files and directories.
+- Access the internet from within the sandbox for tasks like cloning repos or fetching data.
+
+Workflow & Instructions:
+1.  **Analyze Request**: Understand the goal, constraints, and required inputs/outputs.
+2.  **Plan Steps**: Outline the necessary code or commands. Consider file paths, dependencies, and error handling.
+3.  **Generate Code/Command**: Write the Python code or shell command sequence needed. For non-trivial Python, include comments.
+4.  **Execute using Tool**: Prepare the arguments for the '{tool_name_for_prompt}' tool (usually the code string or command string) and invoke the tool.
+5.  **Analyze Output**: Carefully review the stdout, stderr, errors, and any results returned by the tool.
+6.  **Debug/Iterate**: If errors occurred or the output is not as expected, analyze the error, revise the code/command, and execute again using the tool.
+7.  **Final Output**: Once the task is successfully completed, provide the final working code (if relevant), a summary of the execution results (stdout/stderr highlights), confirmation of file operations, and any requested explanation. If the task cannot be completed, explain why.
+8.  **File Handling**: If generating files (code, data, images), clearly state the full path within the sandbox where the file was saved (e.g., `/home/user/my_script.py`, `/home/user/output.csv`). Do not attempt to display images directly in your response.
+
+Focus strictly on tasks achievable within the sandboxed environment using the provided tool. Be precise and careful with file paths and commands.
+"""
+
+        # 4. Call super().__init__
         super().__init__(
             name=name,
             model=model,
-            tools=tools or [],
-            prompt=prompt or formatted_prompt,
-            response_format=response_format,
-            checkpointer=checkpointer,
-            store=store,
-            interrupt_before=interrupt_before,
-            interrupt_after=interrupt_after,
-            debug=debug,
-            version=version,
-        )
-        self.max_iterations = max_iterations
-        self.cache_enabled = cache_enabled
-        self._code_snippets = []  # Initialize code snippets list
-        self._iteration_count = 0  # Current iteration count
-
-    def save_code_snippet(self, language: str, code: str, description: str) -> None:
-        """Save a code snippet.
-
-        Args:
-            language: The programming language of the code.
-            code: The code content.
-            description: Description of what the code does.
-
-        Returns:
-            None
-        """
-        timestamp = datetime.now().isoformat()
-        snippet = CodeSnippet(
-            language=language,
-            code=code,
+            tools=agent_tools,
+            prompt=base_prompt,
             description=description,
-            timestamp=timestamp
+            checkpointer=checkpointer,
+            max_context_messages=max_context_messages,
+            max_context_tokens=max_context_tokens,
+            **kwargs
         )
-        self._code_snippets.append(snippet)
-        
-        # Increment iteration count
-        self._iteration_count += 1
+        print(f"CoderAgent '{self.name}' initialized with tools: {[t.name for t in self.tools if hasattr(t,'name')]}")
 
-    def get_code_snippets(self, language: Optional[str] = None) -> List[CodeSnippet]:
-        """Get code snippets, optionally filtered by language.
-
-        Args:
-            language: Optional language filter.
-
-        Returns:
-            List of code snippets.
-        """
-        if language:
-            return [snippet for snippet in self._code_snippets if snippet["language"] == language]
-        return self._code_snippets
-
-    def get_latest_snippet(self) -> Optional[CodeSnippet]:
-        """Get the most recently created code snippet.
-
-        Returns:
-            The latest code snippet or None if no snippets exist.
-        """
-        if not self._code_snippets:
-            return None
-        return self._code_snippets[-1]
-
-    def clear_snippets(self) -> None:
-        """Clear all stored code snippets.
-
-        Returns:
-            None
-        """
-        self._code_snippets = []
-        self._iteration_count = 0
+    # Inherits _format_tools_for_prompt and other methods from BaseAgent/ReactAgent

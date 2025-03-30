@@ -1118,6 +1118,7 @@ dependencies = [
     { name = "langgraph" },
     { name = "pydantic" },
     { name = "python-dotenv" },
+    { name = "replicate" },
     { name = "rizaio" },
     { name = "serpapi" },
     { name = "sse-starlette" },
@@ -1143,6 +1144,7 @@ requires-dist = [
     { name = "langgraph", specifier = ">=0.3.11" },
     { name = "pydantic", specifier = ">=2.10.6" },
     { name = "python-dotenv", specifier = ">=1.0.0" },
+    { name = "replicate", specifier = ">=1.0.4" },
     { name = "rizaio", specifier = ">=0.9.0" },
     { name = "serpapi", specifier = ">=0.1.5" },
     { name = "sse-starlette", specifier = ">=2.2.1" },
@@ -2007,6 +2009,21 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/ff/9c/daa99532c72f25051a90ef90e1413a8d54413a9e64614d9095b0c1c154d0/regex-2024.11.6-cp39-cp39-musllinux_1_2_x86_64.whl", hash = "sha256:a03e02f48cd1abbd9f3b7e3586d97c8f7a9721c436f51a5245b3b9483044480b", size = 772713 },
     { url = "https://files.pythonhosted.org/packages/13/5d/61a533ccb8c231b474ac8e3a7d70155b00dfc61af6cafdccd1947df6d735/regex-2024.11.6-cp39-cp39-win32.whl", hash = "sha256:41758407fc32d5c3c5de163888068cfee69cb4c2be844e7ac517a52770f9af57", size = 261756 },
     { url = "https://files.pythonhosted.org/packages/dc/7b/e59b7f7c91ae110d154370c24133f947262525b5d6406df65f23422acc17/regex-2024.11.6-cp39-cp39-win_amd64.whl", hash = "sha256:b2837718570f95dd41675328e111345f9b7095d821bac435aac173ac80b19983", size = 274110 },
+]
+
+[[package]]
+name = "replicate"
+version = "1.0.4"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "httpx" },
+    { name = "packaging" },
+    { name = "pydantic" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/77/f4/f2ef5916d1a9a1c8401210992b5e9f6f6bee50f372106ad2e25c1e4f3536/replicate-1.0.4.tar.gz", hash = "sha256:f718601863ef1f419aa7dcdab1ea8770ba5489b571b86edf840cd506d68758ef", size = 60660 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c4/79/9596172f868a94858ffbd5b366386bf2c367ff10525ad7a67d679011ae3c/replicate-1.0.4-py3-none-any.whl", hash = "sha256:f568f6271ff715067901b6094c23c37373bbcfd7de0ff9b85e9c9ead567e09e7", size = 48041 },
 ]
 
 [[package]]

@@ -31,6 +31,7 @@ dependencies = [
     "sse-starlette>=2.2.1",
     "exa-py>=1.9.1",
     "tavily-python>=0.5.1",
+    "replicate>=1.0.4",
 ]
 
 [tool.setuptools]

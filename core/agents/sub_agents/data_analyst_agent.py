@@ -1,240 +1,109 @@
-from typing import Any, Dict, List, Optional, Union, Callable, TypedDict, Type
+# data_analyst_agent.py (or in main.py)
 
+from typing import Any, List, Optional, Union, Callable, Type
 from langchain_core.language_models import LanguageModelLike
-from langchain_core.messages import BaseMessage, SystemMessage
 from langchain_core.tools import BaseTool
-from langchain_core.runnables import Runnable
-from langgraph.checkpoint.base import BaseCheckpointSaver
-from langgraph.store.base import BaseStore
-from core.agents.base.react_agent import ReactAgent, AgentState
-import re
-import json
-from datetime import datetime
+from langchain_core.messages import SystemMessage
+from langgraph.types import Checkpointer
 
+# Internal imports - ensure paths are correct
+from core.agents.base.react_agent import ReactAgent
+from core.tools.registry import get_tools_by_category, ToolCategory, get_tool_instance # Import necessary functions
 
-class AnalysisResult(TypedDict):
-    """Structured analysis result type"""
-    type: str  # Type of analysis (statistical, predictive, exploratory, etc.)
-    data: str  # Data description or reference
-    result: str  # Analysis result or findings
-    methodology: str  # Analysis methodology
-    timestamp: str  # Creation timestamp
+import logging
+logger = logging.getLogger(__name__)
 
+# Assume ToolCategory.CODE_INTERPRETER exists
+# Assume ToolCategory.FILE_SYSTEM exists if needed
 
 class DataAnalystAgent(ReactAgent):
-    """Data Analyst agent implementation for data analysis and visualization tasks.
-
-    Responsibilities:
-    - Analyze data to extract meaningful insights
-    - Create data visualizations to communicate findings
-    - Perform statistical analysis and hypothesis testing
-    - Identify patterns, trends, and anomalies in data
-    - Provide data-driven recommendations
-
-    Design Principles:
-    - Maintain separation of prompt template from initialization logic
-    - Enable flexible prompt customization through inheritance
-    - Follow PEP8 style guidelines for multi-line strings
-    - Store analysis results in structured format for better organization
     """
-
-    _PROMPT_TEMPLATE = """{current_date}
-
-You are a professional Data Analyst specialized in extracting insights from data and communicating findings through clear analysis and visualization.
-
-## REACT Methodology for Data Analysis
-
-### Response Guidelines:
-- Run the appropriate tool first, then provide an in-depth analysis
-- No need to ask follow-up questions, just present findings
-- For stock analysis, discuss performance and trends in paragraphs
-- Avoid showing any code; focus on insights
-
-### Output Guidelines:
-- Keep responses succinct unless more detail is requested
-- Summarize key findings and recommendations
-- Use paragraphs for clarity
-
-Available tools:
-{tools}
-"""
+    Data Analyst Agent (Refactored)
+    - Focuses on analyzing structured data using code execution sandbox.
+    - Generates insights and saves visualizations to files.
+    """
 
     def __init__(
         self,
-        name: str,
-        model: LanguageModelLike,
-        tools: Optional[List[BaseTool]] = None,
-        prompt: Optional[Union[str, SystemMessage, Callable, Runnable]] = None,
-        max_iterations: int = 5,
-        cache_enabled: bool = True,
-        response_format: Optional[Union[dict, Type[Any]]] = None,
-        checkpointer: Optional[BaseCheckpointSaver] = None,
-        store: Optional[BaseStore] = None,
-        interrupt_before: Optional[List[str]] = None,
-        interrupt_after: Optional[List[str]] = None,
+        name: str = "data_analyst_expert",
+        model: LanguageModelLike = None,
+        tools: Optional[List[Union[BaseTool, Callable]]] = None,
+        checkpointer: Optional[Checkpointer] = None,
+        max_context_messages: Optional[int] = None,
+        max_context_tokens: Optional[int] = 120000, # Analysis might need decent context
         debug: bool = False,
-        version: str = "v1",
+        **kwargs
     ):
-        """Initialize a data analyst agent with customizable components.
+        # 1. Define Description for Supervisor
+        description = "Analyzes structured data (provided in context or potentially read from sandbox files) using Python (Pandas, NumPy, Matplotlib, Seaborn) within a secure code execution environment. Performs statistical analysis, identifies trends, generates insights, and creates data visualizations (saved as files in the sandbox)."
 
-        Args:
-            name: Unique identifier for the agent instance.
-            model: Language model for data analysis and insight generation.
-            tools: Available toolset for analysis tasks (default: None).
-            prompt: Custom instruction template (default: use class template).
-            max_iterations: Maximum number of iterations (default: 5).
-            cache_enabled: Whether to cache analysis results (default: True).
-            response_format: Optional response format for structured output.
-            checkpointer: Optional checkpoint saver for persisting agent state.
-            store: Optional storage object for cross-thread data sharing.
-            interrupt_before: Optional list of node names to interrupt before execution.
-            interrupt_after: Optional list of node names to interrupt after execution.
-            debug: Whether to enable debug mode.
-            version: LangGraph version ("v1" or "v2").
-        """
-        # Import tools registry to get data analysis tools
-        from core.tools.registry import get_tools_by_category, ToolCategory
-        
-        # Initialize tools list if None
-        if tools is None:
-            tools = []
-            
-        # Get all registered data analysis tools from the registry
+        # 2. Get Tools from Registry
+        agent_tools = []
+        default_tool_name = "e2b_code_interpreter" # Tool needed for execution
         try:
-            data_tools = get_tools_by_category(ToolCategory.CODE_INTERPRETER)
-            
-            # Add data analysis tools that aren't already in the tools list
-            for data_tool in data_tools:
-                if not any(tool.name == data_tool.name for tool in tools if hasattr(tool, "name")):
-                    tools.append(data_tool)
-                    if debug:
-                        print(f"[{name}] Added data analysis tool: {data_tool.name}")
+            # Primarily needs Code Interpreter
+            code_tools = get_tools_by_category(ToolCategory.CODE_INTERPRETER) + get_tools_by_category(ToolCategory.FILE_SYSTEM) # 需要代码和文件工具
+
+            agent_tools.extend(code_tools)
+            # Optionally, add File System tools if needed to read data files
+            # fs_tools = get_tools_by_category(ToolCategory.FILE_SYSTEM)
+            # agent_tools.extend(fs_tools)
+            print(f"[{name}] Loaded tools from registry: {[t.name for t in agent_tools if hasattr(t,'name')]}")
+            # Verify the main execution tool is present
+            if not any(getattr(t,'name', None) == default_tool_name for t in agent_tools):
+                 print(f"CRITICAL Warning: DataAnalystAgent '{name}' is missing the primary '{default_tool_name}' tool!")
+                 specific_tool = get_tool_instance(default_tool_name)
+                 if specific_tool: agent_tools.append(specific_tool)
+
         except Exception as e:
-            if debug:
-                print(f"[{name}] Failed to get data analysis tools from registry: {str(e)}")
-        
-        # Get current date
-        from core.utils.timezone import get_current_time
-        current_date = get_current_time().strftime("%Y-%m-%d %H:%M:%S")
-        
-        # Format prompt template with tools information
-        formatted_prompt = self._PROMPT_TEMPLATE
-        if tools:
-            tools_str = "\n".join([f"- {tool.name}: {tool.description}" for tool in tools])
-            formatted_prompt = formatted_prompt.format(current_date=current_date, tools=tools_str)
-        else:
-            formatted_prompt = formatted_prompt.format(current_date=current_date, tools="No tools available.")
-        
+             print(f"Warning: Failed to get tools from registry for {name}: {e}")
+
+        if tools: # Merge extra tools
+             existing_names = {t.name for t in agent_tools if hasattr(t,'name')}
+             agent_tools.extend([t for t in tools if getattr(t, 'name', None) not in existing_names])
+
+        if not agent_tools:
+             print(f"CRITICAL Warning: DataAnalystAgent '{name}' initialized with NO execution tools!")
+
+        # 3. Define System Prompt
+        tool_name_for_prompt = next((t.name for t in agent_tools if hasattr(t, 'name') and 'code' in t.name.lower()), default_tool_name)
+
+        base_prompt = f"""You are an expert Data Analyst. Your task is to analyze data using Python code within a secure sandbox environment accessed via the '{tool_name_for_prompt}' tool. Libraries like Pandas, NumPy, Matplotlib, and Seaborn are available (install if needed using pip in your code).
+
+Available Tools:
+{self._format_tools_for_prompt(agent_tools)}
+- **{tool_name_for_prompt}**: Executes Python code in the sandbox. Returns stdout, stderr, errors, and potentially structured results.
+
+Key Instructions:
+1.  **Understand Data & Goal**: Identify the data source (likely provided in previous messages or mentioned as a sandbox file path like '/home/user/data.csv') and the specific analysis question or goal.
+2.  **Plan Analysis**: Briefly outline the Python code steps (e.g., load data into Pandas DataFrame, clean/transform data, perform calculations, generate plot).
+3.  **Write Python Code**: Generate the necessary Python code. Use libraries effectively. Import necessary libraries (e.g., `import pandas as pd`, `import matplotlib.pyplot as plt`).
+4.  **Handle Files (If Needed)**: If reading/writing files within the sandbox, use standard Python file I/O within your code (e.g., `pd.read_csv('/home/user/data.csv')`, `df.to_csv('/home/user/output.csv')`).
+5.  **Handle Visualizations**: If asked to create plots:
+    * Generate the plot using Matplotlib/Seaborn.
+    * **MUST save the plot to a file** inside the sandbox (e.g., `/home/user/plots/my_plot.png`). Use `plt.savefig('/home/user/plots/my_plot.png')`. Create directories if necessary (`os.makedirs('/home/user/plots', exist_ok=True)`).
+    * Use `plt.show()` or `plt.close()` after saving to clear the plot buffer.
+    * **DO NOT attempt to return image data directly.** Images cannot be displayed in the response.
+    * In your response, **state that the plot was generated and provide the full path** where it was saved in the sandbox (e.g., "I have generated a scatter plot and saved it to /home/user/plots/scatter_plot.png").
+6.  **Execute Code**: Use the '{tool_name_for_prompt}' tool to run your complete Python script.
+7.  **Analyze Results**: Interpret the output (stdout, numerical results, errors) from the tool execution.
+8.  **Present Findings**: Summarize your analysis and findings clearly. Use Markdown tables for structured data if helpful. Mention any plots saved and their paths. If errors occurred, explain them.
+9.  **Focus**: Concentrate on data analysis using code execution. Do not perform web searches unless specifically instructed and given tools for it.
+"""
+
+        # 4. Call super().__init__
         super().__init__(
             name=name,
             model=model,
-            tools=tools or [],
-            prompt=prompt or formatted_prompt,
-            response_format=response_format,
+            tools=agent_tools,
+            prompt=base_prompt,
+            description=description,
             checkpointer=checkpointer,
-            store=store,
-            interrupt_before=interrupt_before,
-            interrupt_after=interrupt_after,
+            max_context_messages=max_context_messages,
+            max_context_tokens=max_context_tokens,
             debug=debug,
-            version=version,
+            **kwargs
         )
-        self.max_iterations = max_iterations
-        self.cache_enabled = cache_enabled
-        self._analysis_results = []  # Initialize analysis results list
-        self._iteration_count = 0  # Current iteration count
+        print(f"DataAnalystAgent '{self.name}' initialized.")
 
-    def add_analysis_result(self, type: str, data: str, result: str, methodology: str) -> None:
-        """Add an analysis result.
-
-        Args:
-            type: The type of analysis (statistical, predictive, exploratory, etc.).
-            data: Data description or reference.
-            result: Analysis result or findings.
-            methodology: Analysis methodology.
-
-        Returns:
-            None
-        """
-        timestamp = datetime.now().isoformat()
-        analysis = AnalysisResult(
-            type=type,
-            data=data,
-            result=result,
-            methodology=methodology,
-            timestamp=timestamp
-        )
-        self._analysis_results.append(analysis)
-        
-        # Increment iteration count
-        self._iteration_count += 1
-
-    def get_analysis_results(self, type: Optional[str] = None) -> List[AnalysisResult]:
-        """Get analysis results, optionally filtered by type.
-
-        Args:
-            type: Optional type filter.
-
-        Returns:
-            List of analysis results.
-        """
-        if type:
-            return [result for result in self._analysis_results if result["type"] == type]
-        return self._analysis_results
-
-    def get_latest_result(self) -> Optional[AnalysisResult]:
-        """Get the most recently created analysis result.
-
-        Returns:
-            The latest analysis result or None if no results exist.
-        """
-        if not self._analysis_results:
-            return None
-        return self._analysis_results[-1]
-
-    def clear_results(self) -> None:
-        """Clear all stored analysis results.
-
-        Returns:
-            None
-        """
-        self._analysis_results = []
-        self._iteration_count = 0
-
-    def generate_analysis_report(self, title: str = "Data Analysis Report") -> str:
-        """Generate a comprehensive report from all analysis results.
-
-        Args:
-            title: The title of the analysis report.
-
-        Returns:
-            A formatted report string.
-        """
-        if not self._analysis_results:
-            return "No analysis results available."
-            
-        # Create report header
-        report = f"# {title}\n\n"
-        report += f"*Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*\n\n"
-        
-        # Add executive summary
-        report += "## Executive Summary\n\n"
-        report += "This report contains the following analyses:\n\n"
-        
-        # List all analysis types
-        analysis_types = set(result["type"] for result in self._analysis_results)
-        for analysis_type in analysis_types:
-            report += f"- {analysis_type} analysis\n"
-        report += "\n"
-        
-        # Group results by type
-        for analysis_type in analysis_types:
-            report += f"## {analysis_type.capitalize()} Analysis\n\n"
-            
-            # Add all results of this type
-            type_results = [r for r in self._analysis_results if r["type"] == analysis_type]
-            for i, result in enumerate(type_results, 1):
-                report += f"### Analysis {i}: {result['data']}\n\n"
-                report += f"**Methodology:** {result['methodology']}\n\n"
-                report += f"**Findings:** {result['result']}\n\n"
-        
-        return report
+    # Inherits _format_tools_for_prompt and other methods

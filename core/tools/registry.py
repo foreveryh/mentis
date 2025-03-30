@@ -9,6 +9,7 @@ class ToolCategory(Enum):
     WEB_BROWSING = "Web Browsing"
     DATABASE = "Database"
     FILE_SYSTEM = "FileSystem"
+    IMAGE_GENERATION = "Image Generation"
     OTHER = "Other"
 
 # 全局工具注册表

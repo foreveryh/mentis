@@ -1,320 +1,126 @@
-from typing import Any, Dict, List, Optional, Union, Callable, TypedDict, Type
+# 文件路径示例: reason_graph/research_agent.py
 
+from typing import Any, List, Optional, Union, Callable, Type, cast
 from langchain_core.language_models import LanguageModelLike
-from langchain_core.messages import BaseMessage, SystemMessage
 from langchain_core.tools import BaseTool
-from langchain_core.runnables import Runnable
-from langgraph.checkpoint.base import BaseCheckpointSaver
-from langgraph.store.base import BaseStore
-from core.agents.base.react_agent import ReactAgent, AgentState
-import re
-import json
-from datetime import datetime
+from langchain_core.messages import SystemMessage
+from langgraph.types import Checkpointer
 
+# 内部导入 - 请确保路径正确
+from core.agents.base.react_agent import ReactAgent
+# 导入工具 Registry 相关 - 只需要 get_tools_by_category 和 ToolCategory
+from core.tools.registry import get_tools_by_category, ToolCategory
+# *** 不再需要导入 get_tool 或 get_registered_tools ***
 
-class SearchResult(TypedDict):
-    """Structured search result type"""
-    query: str  # Search query
-    result: str  # Search result
-    timestamp: str  # Search timestamp
-    source: str  # Search source/tool
+import logging
+logger = logging.getLogger(__name__)
+
+# 假设 ToolCategory 包含 SEARCH 和 WEB_Browse
+if not hasattr(ToolCategory, 'SEARCH'): ToolCategory.SEARCH = ToolCategory.OTHER
+if not hasattr(ToolCategory, 'WEB_Browse'): ToolCategory.WEB_Browse = ToolCategory.OTHER
 
 
 class ResearchAgent(ReactAgent):
-    """Research agent implementation for complex information gathering tasks.
-
-    Responsibilities:
-    - Execute multi-round search queries with context awareness
-    - Track search history to avoid repetitive searches
-    - Cache search results for efficient information retrieval
-    - Synthesize information from multiple sources
-    - Limit API calls through intelligent query planning
-
-    Design Principles:
-    - Maintain separation of prompt template from initialization logic
-    - Enable flexible prompt customization through inheritance
-    - Follow PEP8 style guidelines for multi-line strings
-    - Store search history in structured format for better tracking
     """
-
-    _PROMPT_TEMPLATE = """{current_date}
-
-You are a professional Research Analyst specialized in analyzing complex problems and providing in-depth insights. Your primary focus is on conducting thorough research with proper citations and evidence-based analysis.
-
-## REACT Methodology for Research
-
-Key Responsibilities:
-- Conduct comprehensive research using available tools
-- Support findings with credible citations and sources
-- Provide detailed analysis with evidence-based reasoning
-- Structure responses with clear sections and logical flow
-- Synthesize information from multiple sources
-- Evaluate source reliability and research limitations
-- Make the response as long as possible, do not skip any important details
-
-Guidelines for Research Output:
-- Begin with a clear introduction of the research topic
-- Organize findings into well-structured sections
-- Include 2-4 detailed paragraphs per section
-- Support key claims with multiple sources
-- Use proper citation format: [Source](URL)
-- Place citations immediately after relevant statements
-- Conclude with synthesis and key insights
-- Consider both academic and contemporary sources
-- CITATIONS SHOULD BE ON EVERYTHING YOU SAY
-
-Available tools:
-{tools}
-"""
+    研究 Agent (重构版)
+    - 继承自新的 ReactAgent
+    - 专注于定义自身工具和 Prompt
+    - 移除了自定义的状态管理和方法
+    """
 
     def __init__(
         self,
-        name: str,
-        model: LanguageModelLike,
-        tools: Optional[List[BaseTool]] = None,
-        prompt: Optional[Union[str, SystemMessage, Callable, Runnable]] = None,
-        max_iterations: int = 5,
-        cache_enabled: bool = True,
-        response_format: Optional[Union[dict, Type[Any]]] = None,
-        checkpointer: Optional[BaseCheckpointSaver] = None,
-        store: Optional[BaseStore] = None,
-        interrupt_before: Optional[List[str]] = None,
-        interrupt_after: Optional[List[str]] = None,
+        name: str = "research_expert",
+        model: LanguageModelLike = None,
+        tools: Optional[List[Union[BaseTool, Callable]]] = None,
+        checkpointer: Optional[Checkpointer] = None,
+        max_context_messages: Optional[int] = None,
+        max_context_tokens: Optional[int] = 8000,
         debug: bool = False,
-        version: str = "v1",
+        **kwargs
     ):
-        """Initialize a research agent with customizable components.
 
-        Args:
-            name: Unique identifier for the agent instance.
-            model: Language model for decision making and analysis.
-            tools: Available toolset for research tasks (default: None).
-            prompt: Custom instruction template (default: use class template).
-            max_iterations: Maximum number of search iterations (default: 5).
-            cache_enabled: Whether to cache search results (default: True).
-            response_format: Optional response format for structured output.
-            checkpointer: Optional checkpoint saver for persisting agent state.
-            store: Optional storage object for cross-thread data sharing.
-            interrupt_before: Optional list of node names to interrupt before execution.
-            interrupt_after: Optional list of node names to interrupt after execution.
-            debug: Whether to enable debug mode.
-            version: LangGraph version ("v1" or "v2").
-        """
-        # Import tools registry to get search tools
-        from core.tools.registry import get_tools_by_category, ToolCategory
-        
-        # Initialize tools list if None
-        if tools is None:
-            tools = []
-            
-        # Get all registered search tools from the registry
+        # 1. 定义 Agent 描述 (不变)
+        description = "Expert at finding, extracting, and synthesizing the latest information, data, and background knowledge on specific topics using search engines (like Tavily, Google Search) and web Browse tools (like Firecrawl, Arxiv). Capable of providing source links and content summaries."
+
+        # 2. --- 从 Registry 获取和合并工具 ---
+        agent_tools: List[Union[BaseTool, Callable]] = []
+        search_tools_loaded: List[Union[BaseTool, Callable]] = [] # 用于后续检查
+        Browse_tools_loaded: List[Union[BaseTool, Callable]] = []
+
         try:
-            search_tools = get_tools_by_category(ToolCategory.SEARCH)
-            
-            # Add search tools that aren't already in the tools list
-            for search_tool in search_tools:
-                if not any(tool.name == search_tool.name for tool in tools if hasattr(tool, "name")):
-                    tools.append(search_tool)
-                    if debug:
-                        print(f"[{name}] Added search tool: {search_tool.name}")
+            search_tools_loaded = get_tools_by_category(ToolCategory.SEARCH)
+            agent_tools.extend(search_tools_loaded)
+            try:
+                 Browse_tools_loaded = get_tools_by_category(ToolCategory.WEB_Browse)
+                 agent_tools.extend(Browse_tools_loaded)
+            except Exception as e:
+                 if debug: print(f"[{name}] Info: Failed to get WEB_Browse tools: {e}")
+            print(f"[{name}] Loaded tools from registry: {[t.name for t in agent_tools if hasattr(t,'name')]}")
+
+            # --- 简化核心工具检查 ---
+            if not search_tools_loaded: # 直接检查从 Registry 加载的搜索工具列表是否为空
+                 print(f"CRITICAL Warning: ResearchAgent '{name}' initialized without any SEARCH tools from registry!")
+            # ------------------------
+
         except Exception as e:
-            if debug:
-                print(f"[{name}] Failed to get search tools from registry: {str(e)}")
-        
-        # Get current date
-        from core.utils.timezone import get_current_time
-        current_date = get_current_time().strftime("%Y-%m-%d %H:%M:%S")
-        
-        # Format prompt template with tools information
-        formatted_prompt = self._PROMPT_TEMPLATE
+             print(f"Warning: Failed to get tools from registry for {name}: {e}")
+
+        # 合并外部传入的 `tools` 参数 (逻辑不变)
         if tools:
-            tools_str = "\n".join([f"- {tool.name}: {tool.description}" for tool in tools])
-            formatted_prompt = formatted_prompt.format(current_date=current_date, tools=tools_str)
-        else:
-            formatted_prompt = formatted_prompt.format(current_date=current_date, tools="No tools available.")
-        
+            # ... (合并逻辑不变) ...
+             existing_tool_names = {t.name for t in agent_tools if hasattr(t, 'name')}
+             added_external_count = 0
+             for tool in tools:
+                 tool_name = getattr(tool, 'name', None)
+                 if tool_name and tool_name not in existing_tool_names:
+                      agent_tools.append(tool)
+                      existing_tool_names.add(tool_name)
+                      added_external_count +=1
+                 elif not tool_name: 
+                      agent_tools.append(tool)
+                      added_external_count += 1
+             if added_external_count > 0: print(f"[{name}] Merged {added_external_count} external tool(s).")
+
+
+        # --- 简化最终工具检查 ---
+        if not agent_tools:
+             print(f"CRITICAL Warning: ResearchAgent '{name}' initialized with NO tools configured!")
+        # 不再需要那个复杂的 any(...) 检查
+        # ----------------------
+
+        # 3. 定义 Agent 的 System Prompt (逻辑不变)
+        base_prompt = f"""You are a professional Research Analyst expert...
+Available Tools:
+{self._format_tools_for_prompt(agent_tools)} 
+Instructions:
+
+- Analyze the request in the message history.
+
+- If the request requires searching for current information, facts, data, or background knowledge, you MUST use one of your search tools (like 'tavily_search_results').
+
+- When using tools, formulate concise and effective search queries based on the request.
+
+- Synthesize the information found from the tools into a clear and informative answer.
+
+- If you use information from a tool, cite the source implicitly in your response (e.g., "According to [Source Title], ...").
+
+- If the initial search is insufficient, analyze the results and decide if further searches with refined queries or different tools are needed.
+
+- If you cannot find the information after thorough searching, or if the tools return errors, clearly state the limitations encountered. Do not invent information.
+"""
+
+        # 4. 调用父类 __init__ (逻辑不变)
         super().__init__(
             name=name,
             model=model,
-            tools=tools,
-            prompt=prompt or formatted_prompt,
-            response_format=response_format,
+            tools=agent_tools,
+            prompt=base_prompt,
+            description=description,
             checkpointer=checkpointer,
-            store=store,
-            interrupt_before=interrupt_before,
-            interrupt_after=interrupt_after,
+            max_context_messages=max_context_messages,
+            max_context_tokens=max_context_tokens,
             debug=debug,
-            version=version,
+            **kwargs
         )
-        self.max_iterations = max_iterations
-        self.cache_enabled = cache_enabled
-        self._search_history = []  # Initialize search history list
-        self._iteration_count = 0  # Current iteration count
-        self._search_cache = {}  # Search cache dictionary
-
-    def record_search(self, query: str, result: str, source: str) -> None:
-        """Record a search query and its result in the search history.
-
-        Args:
-            query: The search query.
-            result: The search result.
-            source: The source or tool used for the search.
-
-        Returns:
-            None
-        """
-        timestamp = datetime.now().isoformat()
-        search_record = SearchResult(
-            query=query,
-            result=result,
-            timestamp=timestamp,
-            source=source
-        )
-        self._search_history.append(search_record)
-        
-        # If caching is enabled, add the result to the cache
-        if self.cache_enabled:
-            self._search_cache[query] = result
-        
-        # Increment iteration count
-        self._iteration_count += 1
-
-    def get_search_history(self, format_type: str = "text") -> str:
-        """Get the search history in the specified format.
-
-        Args:
-            format_type: The format type, either "text" or "json" (default: "text").
-
-        Returns:
-            The search history in the specified format.
-        """
-        if not self._search_history:
-            return "No search history available."
-
-        if format_type.lower() == "json":
-            return json.dumps(self._search_history, indent=2)
-        else:
-            # Text format
-            history_text = "Search History:\n"
-            for i, record in enumerate(self._search_history):
-                history_text += f"\n{i+1}. Query: {record['query']}\n"
-                history_text += f"   Source: {record['source']}\n"
-                history_text += f"   Time: {record['timestamp']}\n"
-                # Limit result length to avoid excessively long output
-                result_preview = record['result'][:200] + "..." if len(record['result']) > 200 else record['result']
-                history_text += f"   Result: {result_preview}\n"
-            return history_text
-
-    def get_cached_result(self, query: str) -> Optional[str]:
-        """Get a cached search result for a query if available.
-
-        Args:
-            query: The search query.
-
-        Returns:
-            The cached result or None if not found.
-        """
-        if not self.cache_enabled:
-            return None
-            
-        # Try exact match
-        if query in self._search_cache:
-            return self._search_cache[query]
-            
-        # Try fuzzy matching (if query is a subset of another query)
-        for cached_query, result in self._search_cache.items():
-            if query.lower() in cached_query.lower() or cached_query.lower() in query.lower():
-                return result
-                
-        return None
-
-    def clear_history(self) -> None:
-        """Clear the search history and reset the iteration count.
-
-        Returns:
-            None
-        """
-        self._search_history = []
-        self._iteration_count = 0
-
-    def clear_cache(self) -> None:
-        """Clear the search cache.
-
-        Returns:
-            None
-        """
-        self._search_cache = {}
-
-    def has_reached_limit(self) -> bool:
-        """Check if the agent has reached the maximum number of iterations.
-
-        Returns:
-            True if the maximum number of iterations has been reached, False otherwise.
-        """
-        return self._iteration_count >= self.max_iterations
-
-    def reset(self) -> None:
-        """Reset the agent's state, including search history and cache.
-
-        Returns:
-            None
-        """
-        super().reset()
-        self.clear_history()
-        self.clear_cache()
-        
-    # def invoke(self, state: AgentState, config: Optional[Dict[str, Any]] = None) -> AgentState:
-    #     """Override invoke method to add iteration limit check and auto-reset.
-        
-    #     Args:
-    #         state: The current state of the agent.
-    #         config: Optional configuration for the agent.
-            
-    #     Returns:
-    #         The updated state after agent execution.
-    #     """
-    #     # Check if iteration limit has been reached
-    #     if self.has_reached_limit():
-    #         if self.debug:
-    #             print(f"[{self.name}] Maximum iterations {self.max_iterations} reached, automatically resetting state")
-    #         self.reset()
-            
-    #     try:
-    #         return self._agent.invoke(state, config)
-    #     except RecursionError as e:
-    #         error_msg = f"[{self.name}] Recursion depth exceeded error: {str(e)}. State automatically reset."
-    #         print(error_msg)
-    #         self.reset()
-    #         return {"error": error_msg, "messages": state.get("messages", [])}
-    #     except Exception as e:
-    #         error_msg = f"[{self.name}] Execution error: {str(e)}"
-    #         print(error_msg)
-    #         return {"error": error_msg, "messages": state.get("messages", [])}
-            
-    # async def ainvoke(self, state: AgentState, config: Optional[Dict[str, Any]] = None) -> AgentState:
-    #     """Override ainvoke method to add iteration limit check and auto-reset.
-        
-    #     Args:
-    #         state: The current state of the agent.
-    #         config: Optional configuration for the agent.
-            
-    #     Returns:
-    #         The updated state after agent execution.
-    #     """
-    #     # Check if iteration limit has been reached
-    #     if self.has_reached_limit():
-    #         if self.debug:
-    #             print(f"[{self.name}] Maximum iterations {self.max_iterations} reached, automatically resetting state")
-    #         self.reset()
-            
-    #     try:
-    #         return await self._agent.ainvoke(state, config)
-    #     except RecursionError as e:
-    #         error_msg = f"[{self.name}] Recursion depth exceeded error: {str(e)}. State automatically reset."
-    #         print(error_msg)
-    #         self.reset()
-    #         return {"error": error_msg, "messages": state.get("messages", [])}
-    #     except Exception as e:
-    #         error_msg = f"[{self.name}] Execution error: {str(e)}"
-    #         print(error_msg)
-    #         return {"error": error_msg, "messages": state.get("messages", [])}
+        print(f"ResearchAgent '{self.name}' initialized with final tools: {[t.name for t in self.tools if hasattr(t,'name')]}")

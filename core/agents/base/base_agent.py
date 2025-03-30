@@ -151,6 +151,16 @@ class BaseAgent:
     def _get_state_value(self, state: StateSchema, key: str, default: Any = None) -> Any:
          return state.get(key, default) if isinstance(state, dict) else getattr(state, key, default)
     
+    def _format_tools_for_prompt(self, tools: List[Union[BaseTool, Callable]]) -> str:
+        """Formats the tool list for inclusion in the prompt."""
+        if not tools:
+            return "No tools available for use."
+        # 使用 getattr 安全地访问 name 和 description
+        return "\n".join([
+            f"- **{getattr(t, 'name', 'Unnamed Tool')}**: {getattr(t, 'description', 'No description available.')}"
+            for t in tools
+        ])
+        
     # --- build/compile/get_agent ---
     def build(self) -> Optional[StateGraph]:
         """构建 Agent 的 LangGraph 工作流图定义。子类应实现。"""
