@@ -30,18 +30,28 @@ def _handoff_to_agent_implementation(
 ) -> Command:
     """Ask another agent for help. This is the core logic."""
     # Create the ToolMessage confirming the handoff BEFORE generating the Command
+    """Handoff 核心逻辑，添加日志"""
+    print(f"\n--- DEBUG: Entering _handoff_to_agent_implementation ---")
+    print(f"  - Target Agent: {target_agent_name}")
+    print(f"  - Tool Name: {tool_name}")
+    print(f"  - Tool Call ID: {tool_call_id}")
+    # print(f"  - Current State Keys: {list(state.keys())}") # 可选：打印状态键
     tool_message = ToolMessage(
         content=f"Okay, handing off to {target_agent_name}. The current state and task context have been passed.",
         name=tool_name,
         tool_call_id=tool_call_id,
     )
+    print(f"  - Created ToolMessage: ID={tool_message.tool_call_id}, Name={tool_message.name}")
     # The Command tells LangGraph to route to the target agent node
     # It also includes the ToolMessage in the state update for the next step
-    return Command(
+    command_obj = Command(
         goto=target_agent_name,
         # graph=Command.PARENT, # PARENT is default, usually not needed unless nested graphs
         update={"messages": [tool_message]}, # Return only the NEW message to be added
     )
+    print(f"  - Created Command: goto='{command_obj.goto}', update contains {len(command_obj.update.get('messages',[]))} message(s)")
+    print(f"--- DEBUG: Exiting _handoff_to_agent_implementation ---")
+    return command_obj
 
 def create_handoff_tool(*, agent_name: str) -> BaseTool:
     """Create a tool that can handoff control to the requested agent."""
@@ -68,6 +78,9 @@ def create_handoff_tool(*, agent_name: str) -> BaseTool:
          tool_call_id: Annotated[str, InjectedToolCallId]
      ) -> Command:
         """Dynamically generated tool description: Ask the '{agent_name}' agent for help with the current task or question."""
+        # --- 添加 Debug 日志 ---
+        print(f"\n--- DEBUG: Handoff Tool '{tool_name}' (wrapper) CALLED ---")
+        # ---
         return specific_handoff_logic(state=state, tool_call_id=tool_call_id) # type: ignore
 
     # Set a more descriptive description

@@ -177,7 +177,7 @@ async def main():
         # 获取模型实例
         # 确保 'deepseek_v3' 和 'gpt-4o' 是你 LLMManager 中有效的 ID
         deepseek_model = model_manager.get_model("deepseek_v3")
-        gpt4o_model = model_manager.get_model("openai_gpt4o_mini") # 多模态模型
+        gpt4o_model = model_manager.get_model("openai_gpt4o") # 多模态模型
 
         # 实例化 ResearchAgent
         research_agent = ResearchAgent(
@@ -217,6 +217,7 @@ async def main():
         supervisor = SupervisorAgent(
              agents=all_agents,
              model=deepseek_model, # Supervisor 自身使用的模型
+             # model = gpt4o_model,
              state_schema=PlanningAgentState,
              include_agent_name="inline"
              # checkpointer=... # 可选: 添加 Checkpointer 实现持久化
@@ -230,12 +231,16 @@ async def main():
     # --- 5. 获取用户输入 ---
     topic = input("Please enter the initial request for the supervisor: ")
     if not topic:
-         print("No request entered. Exiting.")
-         return
+         print("No request entered. Using default topic.")
+         topic = """我需要获取法国巴黎当前的实时气温。请按以下步骤操作：
+1. 首先，帮我调研一个可以免费获取巴黎当前天气数据的 API (例如 Open-Meteo, WeatherAPI.com 或其他类似的)，重点是找到获取当前气温的 API 端点(endpoint URL)以及如何构造请求（如果可能，选择不需要 API key 的）。
+2. 然后，编写一个 Python 脚本，使用 'requests' 库来调用上一步找到的 API 端点，并从中提取出巴黎当前的温度（摄氏度）。
+3. 使用你的代码执行工具来运行这个 Python 脚本。
+4. 最后，告诉我你找到的当前巴黎温度是多少。"""
 
     # --- 6. 准备初始状态 ---
     initial_graph_state: PlanningAgentState = {
-         "messages": [HumanMessage(content=topic)], # 确保是 HumanMessage 对象
+         "messages": [HumanMessage(content=topic)], 
          "plan": None,
          "error": None
     }

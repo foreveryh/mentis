@@ -89,7 +89,7 @@ class E2BCodeInterpreterTool(BaseTool):
 
     def _run(self, code: str, **kwargs) -> str:
         """同步执行 Python 代码并返回结果摘要字符串"""
-        if not self._is_available or self.sandbox is None:
+        if not self._is_available or self._sandbox is None:
             # ... (返回包含设置指南的错误信息，不变) ...
             error_message = "E2B Sandbox is not available"
             if self._init_error: error_message += f": {self._init_error}"
@@ -134,7 +134,7 @@ class E2BCodeInterpreterTool(BaseTool):
 
     async def _arun(self, code: str, **kwargs) -> str:
         """异步执行 Python 代码并返回结果摘要字符串"""
-        if not self._is_available or self.sandbox is None:
+        if not self._is_available or self._sandbox is None:
              # ... (返回错误信息) ...
              error_message = f"E2B Sandbox is not available: {self._init_error}"
              return f"Execution Failed: {error_message}"
