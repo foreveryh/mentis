@@ -11,7 +11,8 @@ from langchain_core.tools import BaseTool
 
 # --- E2B Imports ---
 try:
-    from e2b import Sandbox, SandboxException, TimeoutException # <--- 修改导入，从 'e2b' 导入
+    from e2b_code_interpreter import Sandbox
+    from e2b_code_interpreter.exceptions import TimeoutException
     E2B_AVAILABLE = True
 except ImportError:
     Sandbox = None # type: ignore
@@ -100,7 +101,7 @@ class E2BCodeInterpreterTool(BaseTool):
         try:
             print(f"--- E2B: Executing code synchronously ---\n{code}\n--------------------------------------")
             # 使用 run_python 方法
-            execution = self._sandbox.run_python(code)
+            execution = self._sandbox.run_code(code)
 
             # 构建结果字符串 (逻辑保持不变)
             if execution.error:
@@ -167,7 +168,7 @@ class E2BCodeInterpreterTool(BaseTool):
         if hasattr(self, "sandbox") and self._is_available and self._sandbox is not None:
             try:
                 print("Attempting to close E2B Sandbox...")
-                self._sandbox.close() # <--- E2B SDK 通常使用 close()
+                self._sandbox.kill()
                 print("E2B Sandbox closed successfully.")
                 self._is_available = False
                 self._sandbox = None

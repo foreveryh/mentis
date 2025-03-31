@@ -99,17 +99,17 @@ class ReactAgent(BaseAgent):
         # 2. 截断消息 (BaseAgent 的方法)
         # 注意：这里截断的是进入 LLM 前的列表，checkpointer 中的完整历史不受影响
         # --- 添加 Debug 打印 (截断前) ---
-        print(f"\nDEBUG _prepare_llm_input ({self.name}): BEFORE truncation (length {len(messages)}):")
-        for i, msg in enumerate(messages[-5:]): # 只看最后几条
-            print(f"  Msg {i-5}: Type={type(msg).__name__}, ToolCallID={getattr(msg, 'tool_call_id', 'N/A')}")
+        # print(f"\nDEBUG _prepare_llm_input ({self.name}): BEFORE truncation (length {len(messages)}):")
+        # for i, msg in enumerate(messages[-5:]): # 只看最后几条
+        #     print(f"  Msg {i-5}: Type={type(msg).__name__}, ToolCallID={getattr(msg, 'tool_call_id', 'N/A')}")
         # ---
 
         truncated_messages = self._truncate_messages(messages)
 
         # --- 添加 Debug 打印 (截断后) ---
-        print(f"DEBUG _prepare_llm_input ({self.name}): AFTER truncation (length {len(truncated_messages)}):")
-        for i, msg in enumerate(truncated_messages[-5:]): # 只看最后几条
-            print(f"  Msg {i-5}: Type={type(msg).__name__}, ToolCallID={getattr(msg, 'tool_call_id', 'N/A')}")
+        # print(f"DEBUG _prepare_llm_input ({self.name}): AFTER truncation (length {len(truncated_messages)}):")
+        # for i, msg in enumerate(truncated_messages[-5:]): # 只看最后几条
+        #     print(f"  Msg {i-5}: Type={type(msg).__name__}, ToolCallID={getattr(msg, 'tool_call_id', 'N/A')}")
         # ---
         
         # 3. 添加基础 System Prompt (如果存在)
@@ -124,7 +124,7 @@ class ReactAgent(BaseAgent):
             
         final_messages.extend(truncated_messages)
         
-        print(f"DEBUG [{self.name}]: Preparing LLM input with {len(final_messages)} messages.") # Optional debug log
+        # print(f"DEBUG [{self.name}]: Preparing LLM input with {len(final_messages)} messages.") # Optional debug log
         # 返回最终的消息列表给 LLM
         return final_messages
     

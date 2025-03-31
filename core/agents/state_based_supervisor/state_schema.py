@@ -49,6 +49,7 @@ class PlanningAgentState(TypedDict):
     """支持计划功能的、用于 Supervisor 图的状态定义"""
     messages: Annotated[Sequence[BaseMessage], add_messages] # 消息历史
     plan: Optional[Plan] = None # 存储计划对象
+    # last_agent_result: Optional[Dict[str, Any]] = None # 存储刚结束的子 Agent 的 {name: ..., content: ...}
     is_last_step: IsLastStep # LangGraph 内部状态
     remaining_steps: RemainingSteps # LangGraph 内部状态, 用于防止无限循环
     error: Optional[str] = None # 用于记录执行中发生的错误信息

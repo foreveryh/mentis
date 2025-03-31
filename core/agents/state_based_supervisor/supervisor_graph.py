@@ -16,7 +16,6 @@ from langgraph.utils.runnable import RunnableCallable
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.prebuilt import ToolNode
-# from langgraph.prebuilt.chat_agent_executor import AgentState, Prompt, StateSchemaType, StructuredResponseSchema # 可能不再需要
 from langgraph.pregel import Pregel
 
 # 内部导入
@@ -25,6 +24,8 @@ try:
     from .handoff import create_handoff_tool, _normalize_agent_name # 确保导入 _normalize_agent_name
     from .state_schema import PlanningAgentState, Plan # 导入 PlanningAgentState 和 Plan
     from .supervisor_node import supervisor_node_logic # 导入异步节点逻辑
+    from .planner_node import planner_node_logic, planner_node_logic_sync # <--- 导入 Planner 逻辑
+    from .evaluate_result_node import evaluate_result_node_logic, evaluate_result_node_logic_sync # <--- 导入 Evaluator 逻辑
     from .agent_name import AgentNameMode, with_agent_name
 except ImportError as e:
      print(f"Error importing modules in supervisor_graph.py: {e}")
@@ -37,6 +38,10 @@ except ImportError as e:
      def create_handoff_tool(*args, **kwargs): return None # type: ignore
      def _normalize_agent_name(s: str) -> str: return s
      async def supervisor_node_logic(*args, **kwargs): return {}
+     async def planner_node_logic(*args, **kwargs): return {} # <--- 添加 planner_node_logic
+     def planner_node_logic_sync(*args, **kwargs): return {} # <--- 添加 planner_node_logic_sync
+     async def evaluate_result_node_logic(*args, **kwargs): return {} # 添加 evaluate_result_node_logic  
+     def evaluate_result_node_logic_sync(*args, **kwargs): return {} # 添加 evaluate_result_node_logic_sync
      def with_agent_name(model, mode): return model
 
 
@@ -44,7 +49,6 @@ except ImportError as e:
 OutputMode = Literal["full_history", "last_message"]
 MODELS_NO_PARALLEL_TOOL_CALLS = {"o3-mini"}
 def _supports_disable_parallel_tool_calls(model: LanguageModelLike) -> bool:
-    # ... (实现保持不变) ...
     if not isinstance(model, BaseChatModel): return False
     if hasattr(model, "model_name") and model.model_name in MODELS_NO_PARALLEL_TOOL_CALLS: return False
     if not hasattr(model, "bind_tools"): return False
@@ -59,40 +63,77 @@ def _make_call_agent(
     add_handoff_back_messages: bool, 
     supervisor_name: str,
 ) -> RunnableCallable:
-    # ... (之前的包含 call_agent 和 acall_agent 的版本保持不变) ...
+    if output_mode not in ["full_history", "last_message"]: raise ValueError(...)
+
     async def acall_agent(state: Dict, config: Optional[RunnableConfig] = None) -> Dict:
         agent_name = getattr(agent_graph, 'name', 'sub_agent')
         print(f"🟡 [Async invoke] Handoff to agent '{agent_name}'")
         sub_agent_input = {"messages": state.get("messages", [])}
-        try: output = await agent_graph.ainvoke(sub_agent_input, config=config); print(f"✅ [Async invoke] Agent '{agent_name}' completed.")
-        except Exception as e: print(f"!!! Error during sub-agent {agent_name} ainvoke: {e}"); return {"messages": []}
+        output: Dict[str, Any] = {}
+        agent_error: Optional[str] = None
+
+        try:
+             output = await agent_graph.ainvoke(sub_agent_input, config=config)
+             print(f"✅ [Async invoke] Agent '{agent_name}' completed.")
+        except Exception as e:
+             print(f"!!! Error during sub-agent {agent_name} ainvoke: {e}"); traceback.print_exc()
+             agent_error = f"Error executing agent '{agent_name}': {type(e).__name__}"
+
         sub_agent_messages: List[BaseMessage] = output.get("messages", [])
-        if not sub_agent_messages: return {"messages": []}
         returned_messages: List[BaseMessage] = []
-        if output_mode == "last_message":
-            last_ai_message = next((m for m in reversed(sub_agent_messages) if isinstance(m, AIMessage)), None)
-            returned_messages = [last_ai_message] if last_ai_message else sub_agent_messages[-1:]
-        else: returned_messages = sub_agent_messages
-        return {"messages": returned_messages}
+        if not sub_agent_messages and not agent_error:
+             returned_messages = [AIMessage(content="(No output received from agent)", name=agent_name)]
+        elif output_mode == "last_message":
+             last_ai_message = next((m for m in reversed(sub_agent_messages) if isinstance(m, AIMessage)), None)
+             returned_messages = [last_ai_message] if last_ai_message else sub_agent_messages[-1:]
+        else:
+             returned_messages = sub_agent_messages
+             
+        last_content = agent_error
+        if not last_content and returned_messages:
+             last_content = str(returned_messages[-1].content) if hasattr(returned_messages[-1], 'content') else "(No textual content)"
+
+        return {
+            "messages": returned_messages,
+            "last_agent_result": {
+                 "agent_name": agent_name,
+                 "content": last_content or "(Agent execution finished without specific output or error)"
+            }
+        }
+
     def call_agent(state: Dict, config: Optional[RunnableConfig] = None) -> Dict:
         agent_name = getattr(agent_graph, 'name', 'sub_agent')
         print(f"🟡 [Sync invoke] Handoff to agent '{agent_name}'")
         sub_agent_input = {"messages": state.get("messages", [])}
+        output: Dict[str, Any] = {}
+        agent_error: Optional[str] = None
+
         try: output = agent_graph.invoke(sub_agent_input, config=config); print(f"✅ [Sync invoke] Agent '{agent_name}' completed.")
-        except NotImplementedError: print(f"Error: Sync invoke not supported by agent '{agent_name}'."); return {"messages": []}
-        except Exception as e: print(f"!!! Error during sub-agent {agent_name} invoke: {e}"); return {"messages": []}
+        except NotImplementedError: agent_error = f"Error: Sync invoke not supported by agent '{agent_name}'."; print(agent_error)
+        except Exception as e: agent_error = f"Error during sub-agent {agent_name} invoke: {e}"; print(f"!!! {agent_error}")
+        
         sub_agent_messages: List[BaseMessage] = output.get("messages", [])
-        if not sub_agent_messages: return {"messages": []}
         returned_messages: List[BaseMessage] = []
-        if output_mode == "last_message":
+        if not sub_agent_messages and not agent_error: returned_messages = [AIMessage(content="(No output received)", name=agent_name)]
+        elif output_mode == "last_message":
              last_ai_message = next((m for m in reversed(sub_agent_messages) if isinstance(m, AIMessage)), None)
              returned_messages = [last_ai_message] if last_ai_message else sub_agent_messages[-1:]
         else: returned_messages = sub_agent_messages
-        return {"messages": returned_messages}
+        
+        last_content = agent_error
+        if not last_content and returned_messages: last_content = str(returned_messages[-1].content) if hasattr(returned_messages[-1], 'content') else "(No content)"
+
+        return {
+            "messages": returned_messages,
+            "last_agent_result": {
+                 "agent_name": agent_name,
+                 "content": last_content or "(Agent sync execution finished)"
+            }
+        }
+
     return RunnableCallable(func=call_agent, afunc=acall_agent, name=f"Call_{getattr(agent_graph, 'name', 'sub_agent')}")
 
 
-# --- 新增：supervisor_node_logic 的同步包装器 ---
 def supervisor_node_logic_sync(
     state: PlanningAgentState,
     config: Optional[RunnableConfig],
@@ -100,23 +141,18 @@ def supervisor_node_logic_sync(
     supervisor_name: str,
     agent_description_map: Dict[str, str]
 ) -> Dict[str, Any]:
-    """supervisor_node_logic 的同步包装器，使用 anyio"""
     print(f"--- Entering Supervisor Node (Sync Wrapper) ---")
     try:
-        # 使用 anyio 在同步函数中运行异步函数
-        # 这适用于从非异步上下文调用 .invoke() 的情况
-        return anyio.run( # type: ignore
+        return anyio.run(
             supervisor_node_logic, state, config, model, supervisor_name, agent_description_map
         )
     except Exception as e:
         print(f"Error running supervisor_node_logic synchronously using anyio: {e}")
         import traceback
         traceback.print_exc()
-        # 返回错误状态
         return {"error": f"Sync execution wrapper failed: {e}", "messages": state.get("messages",[])}
 
 
-# --- 最终版 create_supervisor ---
 def create_supervisor(
     model: LanguageModelLike,
     sub_agents: List[BaseAgent],
@@ -126,17 +162,15 @@ def create_supervisor(
     output_mode: OutputMode = "last_message",
     add_handoff_back_messages: bool = False,
     supervisor_name: str = "supervisor",
+    planner_node_name: str = "planner",
+    evaluator_node_name: str = "evaluate_result",
+    handoff_executor_name: str = "handoff_executor",
     include_agent_name: AgentNameMode | None = "inline",
-) -> StateGraph: # 返回 StateGraph 定义，让调用者编译
-    """
-    创建 Supervisor 图 (最终版)。
-    Supervisor 节点使用手动逻辑，并提供同步/异步支持。
-    使用 ToolNode 处理 Handoff。
-    """
-    # --- 1. 提取 Agent 名称、描述、编译图 (保持不变) ---
+) -> StateGraph:
     agent_graphs: Dict[str, Pregel] = {}
-    agent_names: List[str] = [] # 改回 List 可能更方便 (虽然 set 也可以)
+    agent_names: List[str] = []
     agent_description_map: Dict[str, str] = {}
+    # --- 1. 提取 Agent 信息  ---
     for agent in sub_agents:
         if not isinstance(agent, BaseAgent): raise TypeError(...)
         if not agent.name or agent.name == "LangGraph": raise ValueError(...)
@@ -144,40 +178,22 @@ def create_supervisor(
         agent_names.append(agent.name)
         agent_description_map[agent.name] = getattr(agent, 'description', '...')
         try:
-            compiled_graph = agent.get_agent() # 应该返回最终 Runnable
-            # 之前假设是 Pregel，但 BaseAgent.get_agent 现在返回 Runnable (Sequence)
-            # _make_call_agent 需要 Pregel...
-            # 修正: _make_call_agent 应该接收 BaseAgent 实例，并在内部 get_agent()
-            # 或者 BaseAgent.get_agent() 返回编译后的 Pregel 图 (而不是 Sequence)
-            # 回到让 BaseAgent.get_agent 返回 self._compiled_agent
-            # BaseAgent.compile 创建 self._executable_agent = prep | self._compiled_agent
-            # 让 get_agent 返回 _compiled_agent
-            
-            # **修正 BaseAgent.get_agent 返回类型**
-            # 在 BaseAgent 中:
-            # def get_agent(self) -> CompiledGraph:
-            #      if self._compiled_core_agent is None: self.compile() # Compile should create it
-            #      if self._compiled_core_agent is None: raise RuntimeError(...)
-            #      return self._compiled_core_agent
-            
-            # 假设 get_agent() 返回 CompiledGraph / Pregel
+            compiled_graph = agent.get_agent()
             if not isinstance(compiled_graph, Pregel): 
-                 # 尝试从可执行 runnable 中获取核心 Pregel 图
-                 core_graph = getattr(compiled_graph, 'last', None) # Sequence 的最后一个元素
+                 core_graph = getattr(compiled_graph, 'last', None)
                  if isinstance(core_graph, Pregel):
                       compiled_graph = core_graph
                  else:
                       raise TypeError(f"Could not retrieve Pregel instance from agent '{agent.name}'.get_agent()")
-
-            agent_graphs[agent.name] = compiled_graph # 存 Pregel
+            agent_graphs[agent.name] = compiled_graph
         except Exception as e: raise e
 
-    # --- 2. 创建 Handoff 工具 (保持不变) ---
+     # --- 2. 创建 Handoff 工具 ---
     handoff_tools = [create_handoff_tool(agent_name=name) for name in agent_names]
     supervisor_callable_tools = (tools or []) + handoff_tools
     print(f"Supervisor '{supervisor_name}' bound with tools: {[t.name for t in supervisor_callable_tools]}")
 
-    # --- 3. 绑定工具到 Supervisor 模型 (保持不变) ---
+    # --- 3. 绑定工具到 Supervisor 模型 ---
     bound_supervisor_model: LanguageModelLike
     if not supervisor_callable_tools:
          print(f"Warning: Supervisor '{supervisor_name}' has no tools bound.")
@@ -191,42 +207,63 @@ def create_supervisor(
 
     # --- 4. 构建 StateGraph ---
     builder = StateGraph(state_schema, config_schema=config_schema)
+    
+    # --- 5. 添加 Planner 节点 (使用同步/异步包装) ---
+    planner_logic_partial_async = functools.partial(
+        planner_node_logic,
+        model=model,
+        agent_description_map=agent_description_map,
+    )
+    planner_logic_partial_sync = functools.partial(
+        planner_node_logic_sync,
+        model=model,
+        agent_description_map=agent_description_map,
+    )
+    planner_runnable = RunnableCallable(
+        func=planner_logic_partial_sync,
+        afunc=planner_logic_partial_async,
+        name=planner_node_name
+    )
+    builder.add_node(planner_node_name, planner_runnable)
 
-    # --- 5. 添加 Supervisor 节点 (提供同步/异步包装) ---
+    # --- 6. 添加 Supervisor 节点 (使用同步/异步包装) ---
     supervisor_logic_partial_async = functools.partial(
-        supervisor_node_logic, # 异步核心逻辑
+        supervisor_node_logic,
         model=bound_supervisor_model,
         supervisor_name=supervisor_name,
         agent_description_map=agent_description_map,
     )
     supervisor_logic_partial_sync = functools.partial(
-        supervisor_node_logic_sync, # 同步包装器
+        supervisor_node_logic_sync,
         model=bound_supervisor_model,
         supervisor_name=supervisor_name,
         agent_description_map=agent_description_map,
     )
-    # 使用 RunnableCallable 提供 func 和 afunc
     supervisor_runnable = RunnableCallable(
-        func=supervisor_logic_partial_sync, # type: ignore
-        afunc=supervisor_logic_partial_async, # type: ignore
+        func=supervisor_logic_partial_sync,
+        afunc=supervisor_logic_partial_async,
         name=supervisor_name
     )
-    builder.add_node(supervisor_name, supervisor_runnable) # <--- 使用 RunnableCallable
-    builder.add_edge(START, supervisor_name)
-    # ---
+    builder.add_node(supervisor_name, supervisor_runnable)
 
-    # --- 6. 添加子 Agent 节点和返回边 (保持不变) ---
+    # --- 7. 添加子 Agent 节点 ---
     for name, compiled_graph in agent_graphs.items():
-        builder.add_node( name, _make_call_agent( compiled_graph, output_mode, add_handoff_back_messages, supervisor_name ) )
-        builder.add_edge(name, supervisor_name)
+        builder.add_node(name, _make_call_agent(compiled_graph, output_mode, add_handoff_back_messages, supervisor_name))
+        builder.add_edge(name, evaluator_node_name)
 
-    # --- 7. 添加 Handoff Tool 执行节点 (保持不变) ---
-    handoff_executor_node = ToolNode(handoff_tools, name="HandoffExecutor")
-    builder.add_node("handoff_executor", handoff_executor_node)
+    # --- 8. 添加 Handoff Tool 执行节点 ---
+    handoff_executor_node = ToolNode(handoff_tools, name=handoff_executor_name)
+    builder.add_node(handoff_executor_name, handoff_executor_node)
+    
+    # --- 9. 添加 Evaluate Result 节点 ---
+    evaluator_runnable = RunnableCallable(func=evaluate_result_node_logic_sync, afunc=evaluate_result_node_logic, name=evaluator_node_name)
+    # Evaluator 不需要 model 或 agent descriptions 作为直接参数
+    builder.add_node(evaluator_node_name, evaluator_runnable) # type: ignore
+    # --- 10. 设置图的入口和边 ---
+    builder.set_entry_point(planner_node_name)
+    builder.add_edge(planner_node_name, supervisor_name)
 
-    # --- 8. 添加 Supervisor 的条件路由 (修正版) ---
     def route_from_supervisor(state: PlanningAgentState) -> str:
-        """根据 Supervisor 最新消息和 Plan 状态决定路由 (修正版)"""
         messages = state.get('messages', [])
         plan = state.get('plan')
         last_message = messages[-1] if messages else None
@@ -235,59 +272,47 @@ def create_supervisor(
             print("Routing: Last message not AIMessage, looping supervisor.")
             return supervisor_name
 
-        # 1. 检查 Tool 调用 (Handoff)
         if last_message.tool_calls:
             tool_call = last_message.tool_calls[0]
             agent_name_match = re.match(r"transfer_to_(\w+)", tool_call["name"])
-            
-            # **关键修正**: 直接使用闭包中的 agent_names 列表/集合
             if agent_name_match and agent_name_match.group(1) in agent_names: 
                  extracted_name = agent_name_match.group(1)
-                 # 使用 repr() 打印以检查隐藏字符
                  print(f"DEBUG route_from_supervisor: Tool Call Name = {repr(tool_call['name'])}") 
                  print(f"DEBUG route_from_supervisor: Extracted Target Name = {repr(extracted_name)}") 
                  print(f"DEBUG route_from_supervisor: Available Agent Names = {repr(agent_names)}") 
                  print(f"Routing: Supervisor -> HandoffExecutor (for {extracted_name})")
-                 return "handoff_executor" # <--- 正确路由到 ToolNode
+                 return handoff_executor_name
             else:
                  print(f"DEBUG route_from_supervisor: Membership check failed! ('{extracted_name}' in {repr(agent_names)}) is False.")
                  print(f"Warning: Supervisor called unknown/invalid tool: {tool_call['name']}. Looping supervisor.")
                  return supervisor_name
 
-        # 2. 检查 Plan 是否完成
         if plan and plan.get("status") == "completed":
              print("Routing: Plan completed -> END")
              return END
 
-        # 3. 检查是否有 Plan 更新指令 (表明需要 Supervisor 再次评估)
-        content = last_message.content
-        if isinstance(content, str) and "PLAN_UPDATE:" in content.upper():
-            print("Routing: Plan directive detected, looping supervisor.")
-            return supervisor_name
+        print(f"Routing: No tool call and plan not completed (status: {plan.get('status') if plan else 'None'}). Looping supervisor.")
+        return supervisor_name
 
-        # 4. 否则，认为是最终直接回复或等待（在此简化流程中都结束）
-        print("Routing: No tool call, no plan update, plan not completed. Assuming final answer/end of turn -> END.")
-        return END
-
-    # --- 添加条件边，并提供完整的映射 ---
     builder.add_conditional_edges(
         supervisor_name,
         route_from_supervisor,
         {
-            "handoff_executor": "handoff_executor", # 路由到 Handoff 工具节点
-            supervisor_name: supervisor_name,      # 路由回 Supervisor (用于 Plan 更新后或等待)
-            END: END,                              # 路由到结束
-            # 注意：不再需要映射 agent_names，因为 Handoff 由 ToolNode+Command 处理
+            handoff_executor_name: handoff_executor_name,
+            supervisor_name: supervisor_name,
+            END: END,
         }
     )
-    # ---
+    
+    # Handoff Executor 完成后, LangGraph 处理 Command(goto=...) 直接路由到子 Agent
+    # 不需要从 Handoff Executor 出发的显式边
 
-    print("Supervisor graph definition created (with sync/async node support & corrected routing).")
-    # 返回 StateGraph 定义，让 SupervisorAgent.compile 去编译
-    return builder 
+    # --- 关键修改: 子 Agent 完成后 -> Evaluator ---
+    for name in agent_names:
+        builder.add_edge(name, evaluator_node_name) # <--- 修改: 指向 Evaluator
 
-# --- 确保 BaseAgent.get_agent 返回 Pregel/CompiledGraph ---
-# 需要修改 BaseAgent.compile 返回 self._compiled_core_agent
-# 并修改 BaseAgent.get_agent 返回 self._compiled_core_agent
-# (或者调整 create_supervisor 获取 compiled_graph 的方式)
-# 我们先假设 BaseAgent.get_agent 能正确返回核心 Pregel 图
+    # --- 新增: Evaluator 完成后 -> Supervisor ---
+    builder.add_edge(evaluator_node_name, supervisor_name) # <--- 新增: Evaluator 指回 Supervisor
+
+    print("Supervisor graph definition created with Planner and Evaluator nodes.")
+    return builder # 返回 StateGraph 定义
