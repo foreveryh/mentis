@@ -6,6 +6,7 @@ import os
 import sys
 from typing import Dict, Optional, Any, List
 from langgraph.graph import StateGraph
+from langgraph.graph.graph import CompiledGraph  # Add this import
 
 # Try to import deep_research_app
 try:
@@ -67,19 +68,18 @@ def list_available_agents() -> Dict[str, str]:
     return agents
 
 
-def load_agent(agent_name: str) -> Optional[StateGraph]:
+def load_agent(agent_name: str) -> Optional[CompiledGraph]:
     """Load an agent from the web_agents directory or special agents
     
     Args:
         agent_name (str): The name of the agent to load
         
     Returns:
-        Optional[StateGraph]: The compiled graph for the agent, or None if the agent could not be loaded
+        Optional[CompiledGraph]: The compiled graph for the agent, or None if the agent could not be loaded
     """
     # Special case for deep_research agent
     if agent_name == "deep_research":
         if deep_research_app:
-            print("Returning compiled DeepResearchAgent graph.")
             return deep_research_app
         else:
             print(f"ERROR: DeepResearchAgent requested but not available.")
@@ -110,10 +110,10 @@ DEFAULT_AGENT = 'research_assistant'
 # DEFAULT_AGENT = 'weather_agent'
 
 
-def get_default_agent() -> Optional[StateGraph]:
+def get_default_agent() -> Optional[CompiledGraph]:
     """Get the default agent
     
     Returns:
-        Optional[StateGraph]: The compiled graph for the default agent, or None if it could not be loaded
+        Optional[CompiledGraph]: The compiled graph for the default agent, or None if it could not be loaded
     """
     return load_agent(DEFAULT_AGENT)

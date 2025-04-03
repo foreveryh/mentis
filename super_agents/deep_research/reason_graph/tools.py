@@ -38,8 +38,8 @@ except ImportError:
 # --- Internal Imports ---
 # Assuming these exist in sibling files
 try:
-    from .schemas import SearchResultItem, SearchQuery, StreamUpdate, StreamUpdateData
-    from .state import ResearchState
+    from super_agents.deep_research.reason_graph.schemas import SearchResultItem, SearchQuery, StreamUpdate, StreamUpdateData
+    from super_agents.deep_research.reason_graph.state import ResearchState
 except ImportError as e:
     print(f"Error importing local schemas/state: {e}")
     # Define dummy classes if needed for script to load partially

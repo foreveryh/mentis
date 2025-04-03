@@ -5,8 +5,8 @@ from datetime import datetime
 from typing import Dict, Any, List, Literal
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 # --- Internal Imports ---
-from reason_graph.state import ResearchState # Relative import
-from reason_graph.schemas import ( # Relative import
+from super_agents.deep_research.reason_graph.state import ResearchState # Relative import
+from super_agents.deep_research.reason_graph.schemas import ( # Relative import
     SearchQuery, 
     RequiredAnalysis, 
     AnalysisResult, 
@@ -18,7 +18,7 @@ from reason_graph.schemas import ( # Relative import
     StepInfo,
     ResearchPlan
 )
-from reason_graph.tools import ( # Relative import
+from super_agents.deep_research.reason_graph.tools import ( # Relative import
     llm, 
     llm_creative, 
     generate_structured_output, 
@@ -27,7 +27,7 @@ from reason_graph.tools import ( # Relative import
     perform_x_search, 
     add_stream_update
 )
-from reason_graph.prompt import FINAL_REPORT_SYSTEM_PROMPT_TEMPLATE 
+from super_agents.deep_research.reason_graph.prompt import FINAL_REPORT_SYSTEM_PROMPT_TEMPLATE 
 # --- Node Functions ---
 
 async def plan_research(state: ResearchState) -> Dict[str, Any]:

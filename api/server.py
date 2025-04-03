@@ -4,11 +4,12 @@ from fastapi import FastAPI, Request, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from sse_starlette.sse import EventSourceResponse
 from typing import AsyncGenerator, Dict, Optional, Union, Any
-from api.utils import message_chunk_event, interrupt_event, custom_event, checkpoint_event, format_state_snapshot
+from api.utils import message_chunk_event, interrupt_event, custom_event, checkpoint_event, format_state_snapshot, stream_update_event
 import asyncio
 import traceback
 import json
 from langchain_core.messages import HumanMessage
+from langchain_core.runnables import RunnableConfig
 
 # Import the agent loader
 from api.agent.loader import load_agent, list_available_agents, get_default_agent
@@ -52,7 +53,7 @@ async def state(thread_id: str | None = None, agent: Optional[str] = Query(None)
     if not current_graph:
         raise HTTPException(status_code=404, detail=f"Agent '{agent}' not found")
 
-    config = {"configurable": {"thread_id": thread_id}}
+    config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
 
     state = await current_graph.aget_state(config)
     return format_state_snapshot(state)
@@ -69,7 +70,7 @@ async def history(thread_id: str | None = None, agent: Optional[str] = Query(Non
     if not current_graph:
         raise HTTPException(status_code=404, detail=f"Agent '{agent}' not found")
 
-    config = {"configurable": {"thread_id": thread_id}}
+    config: RunnableConfig  = {"configurable": {"thread_id": thread_id}}
 
     records = []
     async for state in current_graph.aget_state_history(config):
@@ -115,7 +116,7 @@ async def agent(request: Request):
     stop_event = asyncio.Event()
     active_connections[thread_id] = stop_event
 
-    config = {"configurable": {"thread_id": thread_id}}
+    config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
     initial_graph_state: Dict[str, Any] = {}
     input_for_astream: Optional[Union[Dict, Command]] = None  # input for astream
 
@@ -221,12 +222,13 @@ async def agent(request: Request):
     config["configurable"]["thread_id"] = thread_id
 
     # --- State and Input preparation complete ---
-    print(f"Agent: {agent_name or 'default'}, Request Type: {request_type}")
-    print(f"Input for astream: {type(input_for_astream)}")
-    print(f"Config for astream: {config}")
 
     async def generate_events() -> AsyncGenerator[dict, None]:
         try:
+            # 设置recursion_limit为100，解决深度研究时的递归限制问题
+            if agent_name == "deep_research" and "recursion_limit" not in config:
+                config["recursion_limit"] = 100
+                
             async for chunk in current_graph.astream(
                 input_for_astream,  # Use prepared input
                 config,             # Use prepared config
@@ -239,25 +241,30 @@ async def agent(request: Request):
 
                 if chunk_type == "debug":
                     # type can be checkpoint, task, task_result
-                    debug_type = chunk_data["type"]
-                    if debug_type == "checkpoint":
-                        yield checkpoint_event(chunk_data)
-                    elif debug_type == "task_result":
-                        interrupts = chunk_data["payload"].get(
-                            "interrupts", [])
-                        if interrupts and len(interrupts) > 0:
-                            yield interrupt_event(interrupts)
+                    if isinstance(chunk_data, dict) and "type" in chunk_data:
+                        debug_type = chunk_data["type"]
+                        if debug_type == "checkpoint":
+                            yield checkpoint_event(chunk_data)
+                        elif debug_type == "task_result":
+                            interrupts = chunk_data["payload"].get(
+                                "interrupts", [])
+                            if interrupts and len(interrupts) > 0:
+                                yield interrupt_event(interrupts)
                 elif chunk_type == "messages":
-                    yield message_chunk_event(chunk_data[1]["langgraph_node"], chunk_data[0])
+                    # 确保chunk_data是一个包含至少两个元素的列表/元组，并且第二个元素是一个包含langgraph_node的字典
+                    if isinstance(chunk_data, (list, tuple)) and len(chunk_data) > 1 and isinstance(chunk_data[1], dict) and "langgraph_node" in chunk_data[1]:
+                        yield message_chunk_event(chunk_data[1]["langgraph_node"], chunk_data[0])
+                    else:
+                        print(f"Warning: Unexpected messages chunk_data format: {chunk_data}")
+                        # 尝试使用安全的默认值
+                        node_name = chunk_data[1].get("langgraph_node", "unknown") if isinstance(chunk_data, (list, tuple)) and len(chunk_data) > 1 and isinstance(chunk_data[1], dict) else "unknown"
+                        message = chunk_data[0] if isinstance(chunk_data, (list, tuple)) and len(chunk_data) > 0 else None
+                        if message is not None:
+                            yield message_chunk_event(node_name, message)
                 elif chunk_type == "custom":
                     # Check if this is a StreamUpdate
                     if isinstance(chunk_data, dict) and all(k in chunk_data for k in ['id', 'type', 'status', 'title']):
-                        # Use stream_update_event formatter if available, otherwise fall back to custom_event
-                        try:
-                            from api.utils import stream_update_event
-                            yield stream_update_event(chunk_data)
-                        except ImportError:
-                            yield custom_event(chunk_data)
+                        yield stream_update_event(chunk_data)
                     else:
                         yield custom_event(chunk_data)
                 elif chunk_type == "updates":
@@ -284,4 +291,8 @@ def main():
 
 
 if __name__ == "__main__":
+    import sys
+    import os
+    # 将项目根目录添加到 Python 路径中
+    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
     main()

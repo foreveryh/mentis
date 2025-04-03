@@ -125,20 +125,13 @@ def stream_update_event(data: dict):
         符合 SSE EventSourceResponse 格式的字典。
     """
     if not isinstance(data, dict):
-        # 如果传入的不是字典，记录错误或返回一个错误事件
-        print(f"Error: stream_update_event received non-dict data: {type(data)}")
+        # 如果传入的不是字典，返回一个错误事件
         return {
             "event": "error",
             "data": json.dumps({"message": "Internal server error: Invalid stream update data type."})
         }
     
-    # 确保关键字段存在（可选，主要依赖生产者正确生成）
-    # expected_keys = ['id', 'type', 'status', 'title', 'message']
-    # if not all(k in data for k in expected_keys):
-    #     print(f"Warning: stream_update_event received data missing expected keys: {data}")
-        
-    print(f"DEBUG: Formatting stream_update event for ID: {data.get('id')}") # 添加 Debug 日志
     return {
-        "event": "stream_update", # 使用明确的事件名称
-        "data": json.dumps(data, default=str) # 直接序列化数据字典为 JSON 字符串
+        "event": "stream_update",
+        "data": json.dumps(data, default=str)
     }
