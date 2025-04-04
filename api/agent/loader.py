@@ -11,7 +11,7 @@ from langgraph.graph.graph import CompiledGraph  # Add this import
 # Try to import deep_research_app
 try:
     # Adjust this import path based on your project structure
-    from super_agents.deep_research.reason_graph.graph import app as deep_research_app
+    from super_agents.deep_research.reason_graph.graph import web_app as deep_research_app
 except ImportError:
     print("Warning: Failed to import deep_research_app. DeepResearchAgent will be unavailable.")
     deep_research_app = None

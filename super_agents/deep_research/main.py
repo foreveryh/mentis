@@ -29,7 +29,7 @@ if not (project_root / '.git').exists():
     raise FileNotFoundError("Could not determine project root based on .git directory.")
 #    构建需要添加的路径 (例如 'src' 目录)
 #    根据你的实际情况，可能是项目根目录，或者根目录下的 'src', 'lib' 等
-path_to_add = project_root / 'super_agent' / 'deep_research'
+path_to_add = project_root
 # 3. 将计算出的路径添加到 sys.path (如果它还不在里面的话)
 #    使用 str() 将 Path 对象转换为字符串，因为 sys.path 需要字符串
 if str(path_to_add) not in sys.path:
@@ -42,10 +42,10 @@ print(f"Dynamically added to sys.path: {path_to_add}")
 
 # --- LangGraph 和内部模块导入 ---
 try:
-    from reason_graph.graph import app
-    from reason_graph.state import ResearchState
+    from super_agents.deep_research.reason_graph.graph import app
+    from super_agents.deep_research.reason_graph.state import ResearchState
     # 导入需要用到的 Pydantic 模型
-    from reason_graph.schemas import StreamUpdate, FinalSynthesisResult, KeyFinding
+    from super_agents.deep_research.reason_graph.schemas import StreamUpdate, FinalSynthesisResult, KeyFinding
 except ImportError as e:
     print(f"Error importing graph components: {e}")
     print("Please ensure 'reason_graph' package and its modules (graph, state, schemas) exist.")

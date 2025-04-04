@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Literal, Optional, Dict, Any
 from langgraph.graph import StateGraph, END
 from super_agents.deep_research.reason_graph.state import ResearchState
 from super_agents.deep_research.reason_graph.nodes import (
@@ -52,63 +52,97 @@ def decide_gap_followup(state: ResearchState) -> Literal["execute_gap_search", "
         # Basic depth, or advanced with no gaps/failed gap analysis/no queries from gaps
         return "finalize_basic_research" # Use correct function name
 
-# --- Build the Graph ---
+# --- Build Graph Function ---
 
-workflow = StateGraph(ResearchState)
+def build_research_graph(for_web: bool = False) -> StateGraph:
+    """Builds and returns a research workflow graph.
+    
+    Args:
+        for_web: If True, configures the graph for web streaming with additional settings.
+        
+    Returns:
+        A configured StateGraph instance ready to be compiled.
+    """
+    workflow = StateGraph(ResearchState)
+    
+    # Add Nodes - same for both CLI and web versions
+    workflow.add_node("plan_research", plan_research)
+    workflow.add_node("prepare_steps", prepare_steps)
+    workflow.add_node("execute_search", execute_search)
+    workflow.add_node("perform_analysis", perform_analysis)
+    workflow.add_node("analyze_gaps", analyze_gaps)
+    workflow.add_node("execute_gap_search", execute_gap_search)
+    workflow.add_node("synthesize_final_report", synthesize_final_report)
+    workflow.add_node("finalize_basic_research", finalize_basic_research)
+    workflow.add_node("generate_final_markdown_report", generate_final_markdown_report)
+    
+    # Define Edges - same for both CLI and web versions
+    workflow.set_entry_point("plan_research")
+    workflow.add_edge("plan_research", "prepare_steps")
+    workflow.add_edge("prepare_steps", "execute_search") # Start search loop
+    
+    # Search Loop
+    workflow.add_conditional_edges(
+        "execute_search",
+        should_continue_search,
+        { "execute_search": "execute_search", "perform_analysis": "perform_analysis", "analyze_gaps": "analyze_gaps" }
+    )
+    
+    # Analysis Loop
+    workflow.add_conditional_edges(
+        "perform_analysis",
+        should_continue_analysis,
+        { "perform_analysis": "perform_analysis", "analyze_gaps": "analyze_gaps" }
+    )
+    
+    # Gap Analysis Follow-up Logic
+    workflow.add_conditional_edges(
+        "analyze_gaps",
+        decide_gap_followup,
+        { "execute_gap_search": "execute_gap_search", "synthesize_final_report": "synthesize_final_report", "finalize_basic_research": "finalize_basic_research" }
+    )
+    
+    # Gap Search Loop & Synthesis
+    workflow.add_conditional_edges(
+        "execute_gap_search",
+        decide_gap_followup, 
+        { "execute_gap_search": "execute_gap_search", "synthesize_final_report": "synthesize_final_report", "finalize_basic_research": "finalize_basic_research" }
+    )
+    
+    # --- Adjust Final Edges ---
+    # If synthesis succeeds, go to report generation
+    workflow.add_edge("synthesize_final_report", "generate_final_markdown_report") 
+    # If report generation succeeds, END
+    workflow.add_edge("generate_final_markdown_report", END) 
+    # If flow goes to basic finalizer, END
+    workflow.add_edge("finalize_basic_research", END)
+    
+    # Web-specific configuration
+    if for_web:
+        # For web, we might want to configure additional settings
+        # such as checkpoint frequency, stream mode, etc.
+        pass
+        
+    return workflow
 
-# Add Nodes
-workflow.add_node("plan_research", plan_research)
-workflow.add_node("prepare_steps", prepare_steps)
-workflow.add_node("execute_search", execute_search)
-workflow.add_node("perform_analysis", perform_analysis)
-workflow.add_node("analyze_gaps", analyze_gaps)
-workflow.add_node("execute_gap_search", execute_gap_search)
-workflow.add_node("synthesize_final_report", synthesize_final_report)
-workflow.add_node("finalize_basic_research", finalize_basic_research)
-workflow.add_node("generate_final_markdown_report", generate_final_markdown_report) # <-- Add new node
+# --- Build the original workflow for main.py ---
+workflow = build_research_graph(for_web=False)
 
+# --- Build the web workflow for web interface ---
+web_workflow = build_research_graph(for_web=True)
 
-
-# Define Edges
-workflow.set_entry_point("plan_research")
-workflow.add_edge("plan_research", "prepare_steps")
-workflow.add_edge("prepare_steps", "execute_search") # Start search loop
-
-# Search Loop
-workflow.add_conditional_edges(
-    "execute_search",
-    should_continue_search,
-    { "execute_search": "execute_search", "perform_analysis": "perform_analysis", "analyze_gaps": "analyze_gaps" }
-)
-
-# Analysis Loop
-workflow.add_conditional_edges(
-    "perform_analysis",
-    should_continue_analysis,
-    { "perform_analysis": "perform_analysis", "analyze_gaps": "analyze_gaps" }
-)
-
-# Gap Analysis Follow-up Logic
-workflow.add_conditional_edges(
-    "analyze_gaps",
-    decide_gap_followup,
-    { "execute_gap_search": "execute_gap_search", "synthesize_final_report": "synthesize_final_report", "finalize_basic_research": "finalize_basic_research" } # Point to correct basic finalizer
-)
-
-# Gap Search Loop & Synthesis
-workflow.add_conditional_edges(
-    "execute_gap_search",
-    decide_gap_followup, 
-    { "execute_gap_search": "execute_gap_search", "synthesize_final_report": "synthesize_final_report", "finalize_basic_research": "finalize_basic_research" } # Point to correct basic finalizer
-)
-
-# --- Adjust Final Edges ---
-# If synthesis succeeds, go to report generation
-workflow.add_edge("synthesize_final_report", "generate_final_markdown_report") 
-# If report generation succeeds, END
-workflow.add_edge("generate_final_markdown_report", END) 
-# If flow goes to basic finalizer, END
-workflow.add_edge("finalize_basic_research", END) 
-
-# Compile the graph
+# Compile both graphs
 app = workflow.compile()
+web_app = web_workflow.compile()
+
+# Function to get the appropriate app based on context
+def get_app(for_web: bool = False) -> Any:
+    """Returns the appropriate compiled graph based on the context.
+    
+    Args:
+        for_web: If True, returns the web-optimized graph.
+        
+    Returns:
+        The compiled graph application.
+    """
+    return web_app if for_web else app
