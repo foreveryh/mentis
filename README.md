@@ -1,4 +1,4 @@
-# Mentis Multi-Agent Framework (重构版)
+# Mentis Multi-Agent Framework
 
 [![Python Version](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) 
@@ -121,6 +121,10 @@ Super Agent 可以理解为一个**独立的、具有端到端能力、能够完
 这些 Super Agents 既可以**独立运行**以完成特定的大型任务，也可以被更高层的协调者（例如我们的 Supervisor Agent）**视为一种强大的“能力”或“工具”**来调用，以处理其复杂计划中的某个步骤。
 
 ### DeepResearch Agent (第一个实例)
+
+
+https://github.com/user-attachments/assets/2a685709-5be0-43a3-9e2d-934ef5fa3315
+
 
 `DeepResearch Agent` 是我们在此框架理念下实现的第一个 Super Agent 实例（其早期版本是我们开发此 Multi-Agent 框架的基础）。
 
