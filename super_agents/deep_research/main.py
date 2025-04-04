@@ -1,4 +1,6 @@
 # main.py
+import sys
+from pathlib import Path
 import asyncio
 import json
 import os # <--- 导入 os 模块
@@ -14,6 +16,29 @@ except ImportError:
     # 如果用户没有安装 openai 包，定义一个基础异常类以便 except 块能工作
     class RateLimitError(Exception):
         pass
+
+# 1. 获取当前脚本文件的绝对路径对象
+#    Path(__file__) 获取当前脚本路径
+#    .resolve() 将其转换为绝对路径，并解析任何符号链接
+current_script_path = Path(__file__).resolve()
+project_root = current_script_path.parent
+while not (project_root / '.git').exists() and project_root.parent != project_root:
+    project_root = project_root.parent
+if not (project_root / '.git').exists():
+       # 如果找不到 .git，可能需要用其他标记或给出错误
+    raise FileNotFoundError("Could not determine project root based on .git directory.")
+#    构建需要添加的路径 (例如 'src' 目录)
+#    根据你的实际情况，可能是项目根目录，或者根目录下的 'src', 'lib' 等
+path_to_add = project_root / 'super_agent' / 'deep_research'
+# 3. 将计算出的路径添加到 sys.path (如果它还不在里面的话)
+#    使用 str() 将 Path 对象转换为字符串，因为 sys.path 需要字符串
+if str(path_to_add) not in sys.path:
+    # insert(0, ...) 表示优先搜索这个路径
+    sys.path.insert(0, str(path_to_add))
+
+# (可选) 打印出来确认一下
+print(f"Dynamically added to sys.path: {path_to_add}")
+# print(sys.path)
 
 # --- LangGraph 和内部模块导入 ---
 try:
