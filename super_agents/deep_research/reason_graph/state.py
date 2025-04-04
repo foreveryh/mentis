@@ -2,7 +2,7 @@ import operator
 from typing import TypedDict, List, Optional, Annotated, Dict, Any, Literal
 
 # Use relative import to access schemas defined within the same package
-from reason_graph.schemas import (
+from super_agents.deep_research.reason_graph.schemas import (
     ResearchPlan,
     SearchStepResult,
     GapAnalysisResult,

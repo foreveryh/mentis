@@ -72,9 +72,22 @@ export interface Message {
   content: string;
   id?: string;
   tool_calls?: ToolCall[];
+  name?: string; // Added name field
 }
 
 export type ToolCall = { name: string, args: object, id: string };
+
+// StreamUpdateData interface for research progress updates
+export interface StreamUpdateData {
+  id: string;
+  timestamp: number;
+  title: string;
+  status: 'running' | 'completed' | 'error';
+  message: string;
+  completedSteps?: number;
+  totalSteps?: number;
+  metadata?: Record<string, any>;
+}
 
 /** Data of the message chunk event. */
 export interface NodeMessageChunk {
@@ -99,11 +112,11 @@ export interface WithMessages {
 }
 
 /** Events that are emitted by the agent.
- * @param event - event type. Can be 'checkpoint', 'message_chunk', 'interrupt', 'custom', 'error'.
+ * @param event - event type. Can be 'checkpoint', 'message_chunk', 'interrupt', 'custom', 'error', 'stream_update', 'end'.
  */
 export interface AgentEvent<TAgentState, TInterruptValue> {
-  event: string
-  data: Checkpoint<TAgentState, TInterruptValue> | NodeMessageChunk | Interrupt<TInterruptValue>[] | TAgentState;
+  event: string; // 'checkpoint', 'message_chunk', 'interrupt', 'custom', 'error', 'stream_update', 'end'
+  data: Checkpoint<TAgentState, TInterruptValue> | NodeMessageChunk | Interrupt<TInterruptValue>[] | Partial<TAgentState> | StreamUpdateData | string | any;
 }
 
 /** Generic interface for an agent input. Thread id is required. */

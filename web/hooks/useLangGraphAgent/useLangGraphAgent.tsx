@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
+import { v4 as uuidv4 } from 'uuid';
 import {
   Checkpoint,
   Interrupt,
@@ -15,6 +16,8 @@ import {
   ToolCall,
   WithMessages,
   NodeMessageChunk,
+  StreamUpdateData,
+  Message,
 } from './types';
 import { callAgentRoute } from './api';
 import { getHistory, stopAgent } from './actions';
@@ -48,48 +51,63 @@ export function useLangGraphAgent<TAgentState extends object | WithMessages, TIn
 
   const [status, setStatus] = useState<AgentStatus>('idle');
   const [restoring, setRestoring] = useState(false);
+  const [restoreError, setRestoreError] = useState(false);
   const [appCheckpoints, setAppCheckpoints] = useState<AppCheckpoint<TAgentState, TInterruptValue>[]>([]);
-
+  // Add messages state to directly manage message history
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [progressUpdates, setProgressUpdates] = useState<Record<string, StreamUpdateData>>({});
 
   /**
    * Run the agent.
    * @param agentInput - Input configuration for running the agent (see {@link RunAgentInput}).
    */
-  async function run(agentInput: RunAgentInput<TAgentState>) {
+  const run = useCallback(async (agentInput: RunAgentInput<TAgentState>) => {
+    // Extract user input messages from state and ensure they have IDs
+    const userInputMessages = (agentInput.state as WithMessages)?.messages ?? [];
+    if (userInputMessages.length > 0 && !userInputMessages[0].id) {
+      userInputMessages[0].id = `user-${uuidv4()}`;
+    }
+
+    // Update messages state immediately to show user input
+    setMessages(prev => [...prev, ...(userInputMessages as Message[])]);
+    
+    setProgressUpdates({}); // Reset progress updates
+    setAppCheckpoints([]); // Clear checkpoints for new run
+    
     await callAgent({ type: "run", ...agentInput });
-  }
+  }, []);
 
   /**
    * Resume the agent. Action should be called after the agent has been interrupted.
    * @param agentInput - Input configuration for resuming the agent (see {@link ResumeAgentInput}).
    */
-  async function resume(agentInput: ResumeAgentInput<TResumeValue>) {
+  const resume = useCallback(async (agentInput: ResumeAgentInput<TResumeValue>) => {
     await callAgent({ type: "resume", ...agentInput });
-  }
+  }, []);
 
   /**
    * Fork the checkpoint with the updated state.
    * @param agentInput - Input configuration for forking the agent (see {@link ForkAgentInput}).
    */
-  async function fork(agentInput: ForkAgentInput<TAgentState>) {
+  const fork = useCallback(async (agentInput: ForkAgentInput<TAgentState>) => {
     removeAppCheckpointsAfterCheckpoint(agentInput.config.configurable.checkpoint_id);
     await callAgent({ type: "fork", ...agentInput });
-  }
+  }, []);
 
   /**
    * Runs agent from the checkpoint.
    * @param agentInput - Input configuration for replaying the agent (see {@link ReplayAgentInput}).
    */
-  async function replay(agentInput: ReplayAgentInput) {
+  const replay = useCallback(async (agentInput: ReplayAgentInput) => {
     removeAppCheckpointsAfterCheckpoint(agentInput.config.configurable.checkpoint_id);
     await callAgent({ type: "replay", ...agentInput });
-  }
+  }, []);
 
   /**
    * Stops the agent execution. Agent will not stop immediately. It will stop before emitting the last event (see {@link AgentEvent}).
    * @param threadId - The ID of the thread to stop.
    */
-  async function stop(threadId: string) {
+  const stop = useCallback(async (threadId: string) => {
     try {
       setStatus('stopping');
       await stopAgent(threadId);
@@ -97,17 +115,21 @@ export function useLangGraphAgent<TAgentState extends object | WithMessages, TIn
       console.error('Error stopping agent:', error);
       setStatus('idle');
     }
-  }
+  }, []);
 
   function removeAppCheckpointsAfterCheckpoint(checkpointId: string) {
-    const index = appCheckpoints.findIndex(node => node.checkpointConfig.configurable.checkpoint_id === checkpointId);
-    if (index !== -1) {
-      appCheckpoints.splice(index);
-      setAppCheckpoints([...appCheckpoints]);
-    }
+    setAppCheckpoints(prevCheckpoints => {
+      const index = prevCheckpoints.findIndex(
+        node => node.checkpointConfig.configurable.checkpoint_id === checkpointId
+      );
+      if (index !== -1) {
+        return prevCheckpoints.slice(0, index + 1);
+      }
+      return prevCheckpoints;
+    });
   }
 
-  async function callAgent(agentInput: RunAgentInputInternal<TAgentState> | ResumeAgentInputInternal<TResumeValue> | ForkAgentInputInternal<TAgentState> | ReplayAgentInputInternal) {
+  const callAgent = useCallback(async (agentInput: RunAgentInputInternal<TAgentState> | ResumeAgentInputInternal<TResumeValue> | ForkAgentInputInternal<TAgentState> | ReplayAgentInputInternal) => {
     if (!agentInput.type) {
       throw new Error('Type is required');
     }
@@ -116,6 +138,19 @@ export function useLangGraphAgent<TAgentState extends object | WithMessages, TIn
       throw new Error('Thread id is required');
     }
 
+    // Create local copies of state to modify during streaming
+    let currentMessagesCopy: Message[] = [];
+    setMessages(prev => { 
+      currentMessagesCopy = [...prev]; 
+      return prev;
+    });
+    
+    let currentAppCheckpoints: AppCheckpoint<TAgentState, TInterruptValue>[] = [];
+    setAppCheckpoints(prev => { 
+      currentAppCheckpoints = [...prev]; 
+      return prev;
+    });
+
     try {
       setStatus('running');
       // Invalidate cache when agent is called
@@ -123,59 +158,93 @@ export function useLangGraphAgent<TAgentState extends object | WithMessages, TIn
 
       const messageStream = callAgentRoute<TAgentState, TInterruptValue, TResumeValue>(agentInput);
       for await (const msg of messageStream) {
-
         if (msg.event === 'checkpoint') {
-          processCheckpoint(msg.data as Checkpoint<TAgentState, TInterruptValue>, appCheckpoints);
-          setAppCheckpoints([...appCheckpoints]);
+          const checkpoint = msg.data as Checkpoint<TAgentState, TInterruptValue>;
+          processCheckpoint(checkpoint, currentAppCheckpoints);
+          
+          // Update messages from checkpoint state if available
+          const stateValues = checkpoint.values as WithMessages;
+          if (stateValues?.messages) {
+            currentMessagesCopy = deepCopy(stateValues.messages);
+            setMessages([...currentMessagesCopy]);
+          }
+          
+          setAppCheckpoints([...currentAppCheckpoints]);
         }
 
         if (msg.event === 'message_chunk') {
-          processMessageChunk(msg.data as NodeMessageChunk, appCheckpoints);
-          setAppCheckpoints([...appCheckpoints]);
+          processMessageChunk(msg.data as NodeMessageChunk, currentMessagesCopy);
+          setMessages([...currentMessagesCopy]);
+        }
+
+        if (msg.event === 'stream_update') {
+          try {
+            let updateData: StreamUpdateData;
+            if (typeof msg.data === 'string') {
+              updateData = JSON.parse(msg.data) as StreamUpdateData;
+            } else {
+              updateData = msg.data as StreamUpdateData;
+            }
+            
+            if (updateData?.id) {
+              setProgressUpdates(prev => ({ ...prev, [updateData.id]: updateData }));
+            } else {
+              console.warn("Invalid stream_update data");
+            }
+          } catch (e) {
+            console.error("Error processing stream_update:", e, msg.data);
+          }
         }
 
         if (msg.event === 'custom') {
-          processCustomEvent(msg.data as Partial<TAgentState>, appCheckpoints);
-          setAppCheckpoints([...appCheckpoints]);
+          processCustomEvent(msg.data as Partial<TAgentState>, currentAppCheckpoints);
+          setAppCheckpoints([...currentAppCheckpoints]);
         }
 
         if (msg.event === 'interrupt') {
-          processInterrupts(msg.data as Interrupt<TInterruptValue>[], appCheckpoints);
-          setAppCheckpoints([...appCheckpoints]);
+          processInterrupts(msg.data as Interrupt<TInterruptValue>[], currentAppCheckpoints);
+          setAppCheckpoints([...currentAppCheckpoints]);
         }
 
         if (msg.event === 'error') {
-          processError(appCheckpoints);
-          setAppCheckpoints([...appCheckpoints]);
+          processError(currentAppCheckpoints);
+          setAppCheckpoints([...currentAppCheckpoints]);
+          setStatus('error');
         }
       }
 
       setStatus('idle');
     } catch (error) {
-      console.error(error);
+      console.error('Error in callAgent:', error);
+      // Keep current messages on error
+      setMessages(currentMessagesCopy);
       setStatus('error');
     }
-  }
+  }, [onCheckpointStart, onCheckpointEnd, onCheckpointStateUpdate]);
 
   /**
    * Restores the agent state from the checkpoints history.
    * @param threadId - The ID of the thread to restore.
+   * @returns Promise that resolves to the restored checkpoints
    */
-  async function restore(threadId: string) {
+  const restore = useCallback(async (threadId: string): Promise<AppCheckpoint<TAgentState, TInterruptValue>[]> => {
     if (!threadId) {
       throw new Error('Thread id is required');
     }
 
     try {
       setRestoring(true);
+      setRestoreError(false);
 
       const restoredCheckpoints: AppCheckpoint<TAgentState, TInterruptValue>[] = [];
+      let finalMessagesCopy: Message[] = [];
+      
       let history: Checkpoint<TAgentState, TInterruptValue>[];
 
       // Try to get history from cache
       const cachedHistory = historyCache.get(threadId);
       if (cachedHistory && enableRestoreCache) {
-        console.log("Getting history from cache")
+        console.log("Getting history from cache");
         history = cachedHistory;
       } else {
         history = await getHistory(threadId);
@@ -196,23 +265,29 @@ export function useLangGraphAgent<TAgentState extends object | WithMessages, TIn
 
       for (const checkpoint of newHistory.reverse()) {
         processHistoryCheckpoint(checkpoint, restoredCheckpoints);
+        
+        // Extract messages from checkpoint state
+        const stateValues = checkpoint.values as WithMessages;
+        if (stateValues?.messages) {
+          finalMessagesCopy = deepCopy(stateValues.messages);
+        }
       }
 
       setAppCheckpoints(restoredCheckpoints);
+      setMessages(finalMessagesCopy);
+      
+      return restoredCheckpoints;
     } catch (error) {
-      console.error('Error:', error);
+      console.error('Error restoring agent:', error);
+      setRestoreError(true);
       throw new Error('Error restoring agent');
     } finally {
       setRestoring(false);
     }
-  }
+  }, []);
 
   function processHistoryCheckpoint(checkpoint: Checkpoint<TAgentState, TInterruptValue>, appCheckpoints: AppCheckpoint<TAgentState, TInterruptValue>[]) {
     let interruptionInLastCheckpoint = false;
-
-    // Creating checkpoints array from the restored checkpoints.
-    // Checkpoint initial state is a checkpoint values before nodes execution.
-    // On a new checkpoint, we update the last checkpoint with the checkpoint values.
 
     // Update the last checkpoint with the latest checkpoint values
     if (appCheckpoints.length > 0) {
@@ -244,17 +319,12 @@ export function useLangGraphAgent<TAgentState extends object | WithMessages, TIn
   function processCheckpoint(checkpoint: Checkpoint<TAgentState, TInterruptValue>, appCheckpoints: AppCheckpoint<TAgentState, TInterruptValue>[]) {
     let interruptionInLastCheckpoint = false;
 
-    // Creating checkpoints array from the restored checkpoints.
-    // Checkpoint initial state is a checkpoint values before nodes execution.
-    // On a new checkpoint, we update the last checkpoint with the checkpoint values.
-
     // Update the last checkpoint with the latest checkpoint values
     if (appCheckpoints.length > 0) {
       const lastCheckpoint = appCheckpoints[appCheckpoints.length - 1];
       lastCheckpoint.state = deepCopy(checkpoint.values);
       lastCheckpoint.stateDiff = getStateDiff(lastCheckpoint.stateInitial, checkpoint.values);
       updateGraphNodeStateFromMetadata(lastCheckpoint, checkpoint);
-
 
       // Delete interrupt if there are further checkpoints. It means that the interruption was handled.
       // Preserve interrupt for the last checkpoint.
@@ -307,61 +377,97 @@ export function useLangGraphAgent<TAgentState extends object | WithMessages, TIn
     });
   }
 
-  function processMessageChunk(nodeMessageChunk: NodeMessageChunk, appCheckpoints: AppCheckpoint<TAgentState, TInterruptValue>[]) {
-    if (appCheckpoints.length === 0) {
-      return;
-    }
+  function processMessageChunk(nodeMessageChunk: NodeMessageChunk, currentMessages: Message[]) {
+    if (!nodeMessageChunk?.message_chunk?.id) return;
+    
+    const chunkId = nodeMessageChunk.message_chunk.id;
+    const chunkContent = nodeMessageChunk.message_chunk.content || '';
+    const chunkToolCalls = nodeMessageChunk.message_chunk.tool_call_chunks;
+    
+    const existingMsgIndex = currentMessages.findIndex(m => m.id === chunkId);
 
-    const lastCheckpoint = appCheckpoints[appCheckpoints.length - 1];
-
-    // Check if the state has messages property
-    if (!('messages' in lastCheckpoint.state)) {
-      return;
-    }
-
-    const message = lastCheckpoint.state.messages.find((x) => x.id === nodeMessageChunk.message_chunk.id);
-
-    if (message) {
-      message.content += nodeMessageChunk.message_chunk.content;
-      // TODO: handle tool_call_chunks
-
-      // Update content in matching nodes
-      if (nodeMessageChunk.node_name) {
-        const matchingNodes = lastCheckpoint.nodes.filter(node => node.name === nodeMessageChunk.node_name);
-        matchingNodes.forEach(node => {
-          const stateWithMessages = node.state as unknown as WithMessages;
-          const nodeMessage = stateWithMessages.messages.find(x => x.id === nodeMessageChunk.message_chunk.id);
-          if (nodeMessage) {
-            nodeMessage.content += nodeMessageChunk.message_chunk.content;
+    if (existingMsgIndex !== -1) {
+      // Update existing message
+      currentMessages[existingMsgIndex].content += chunkContent;
+      
+      // Process tool call chunks if available
+      if (chunkToolCalls?.length > 0) {
+        // Update or add tool calls
+        if (!currentMessages[existingMsgIndex].tool_calls) {
+          currentMessages[existingMsgIndex].tool_calls = [];
+        }
+        
+        // For each tool call chunk, find matching tool call or create new one
+        chunkToolCalls.forEach(toolCallChunk => {
+          if (!toolCallChunk.id) return;
+          
+          const existingToolCallIndex = currentMessages[existingMsgIndex].tool_calls?.findIndex(
+            tc => tc.id === toolCallChunk.id
+          );
+          
+          if (existingToolCallIndex !== -1 && currentMessages[existingMsgIndex].tool_calls) {
+            // Update existing tool call
+            const toolCall = currentMessages[existingMsgIndex].tool_calls![existingToolCallIndex];
+            if (toolCallChunk.name) toolCall.name = toolCallChunk.name;
+            
+            // Append arguments (typically JSON string)
+            if (toolCallChunk.args) {
+              if (!toolCall.args) toolCall.args = {};
+              try {
+                const argsObj = typeof toolCallChunk.args === 'string' 
+                  ? JSON.parse(toolCallChunk.args)
+                  : toolCallChunk.args;
+                toolCall.args = { ...toolCall.args, ...argsObj };
+              } catch (e) {
+                console.error("Error parsing tool call args:", e);
+                // If parsing fails, store as raw string
+                toolCall.args = toolCallChunk.args;
+              }
+            }
+          } else if (currentMessages[existingMsgIndex].tool_calls) {
+            // Create new tool call
+            currentMessages[existingMsgIndex].tool_calls.push({
+              id: toolCallChunk.id,
+              name: toolCallChunk.name || '',
+              args: toolCallChunk.args || {}
+            });
           }
         });
       }
-
+      
+      // Update node-specific messages
+      if (nodeMessageChunk.node_name) {
+        // This is handled by the checkpoint update, not needed here
+      }
     } else {
-      // When LLM streams input to the tool, tool name is in the first message chunk.
-      const toolCalls: ToolCall[] = nodeMessageChunk.message_chunk.tool_call_chunks?.filter(x => x.name).map((x) => ({ name: x.name, args: {}, id: x.id })) as ToolCall[];
-      const newMessage = {
-        type: "ai" as const,
-        content: nodeMessageChunk.message_chunk.content,
-        id: nodeMessageChunk.message_chunk.id,
-        tool_calls: toolCalls
-      };
-      lastCheckpoint.state.messages.push(newMessage);
-
-      // Add the message to nodes that match the node message chunk name
-      if (nodeMessageChunk.node_name) {
-        const matchingNodes = lastCheckpoint.nodes.filter(node => node.name === nodeMessageChunk.node_name);
-        matchingNodes.forEach(node => {
-          // Since we're already in a context where we know the parent state has messages,
-          // we can safely initialize the node state with messages
-          const stateWithMessages = node.state as unknown as WithMessages;
-          if (!('messages' in node.state)) {
-            stateWithMessages.messages = [];
+      // Create new message
+      const toolCalls: ToolCall[] = [];
+      
+      // Initialize tool calls if present in the chunk
+      if (chunkToolCalls?.length > 0) {
+        chunkToolCalls.forEach(tc => {
+          if (tc.id && tc.name) {
+            toolCalls.push({
+              id: tc.id,
+              name: tc.name,
+              args: tc.args || {}
+            });
           }
-          stateWithMessages.messages.push({ ...newMessage });
-          node.state = stateWithMessages as unknown as TAgentState;
         });
       }
+      
+      const newMessage: Message = {
+        type: "ai",
+        content: chunkContent,
+        id: chunkId,
+        tool_calls: toolCalls.length > 0 ? toolCalls : undefined
+      };
+      
+      if (nodeMessageChunk.node_name) {
+        newMessage.name = nodeMessageChunk.node_name;
+      }
+      
+      currentMessages.push(newMessage);
     }
   }
 
@@ -434,9 +540,30 @@ export function useLangGraphAgent<TAgentState extends object | WithMessages, TIn
     return diff;
   }
 
-  function deepCopy(obj: TAgentState | Partial<TAgentState>) {
-    return JSON.parse(JSON.stringify(obj));
+  function deepCopy<T>(obj: T): T {
+    if (obj === null || typeof obj !== 'object') { 
+      return obj; 
+    }
+    try { 
+      return JSON.parse(JSON.stringify(obj)); 
+    } catch (e) { 
+      console.error("Deep copy failed:", e); 
+      return obj; 
+    }
   }
 
-  return { status, appCheckpoints, run, resume, fork, replay, restore, stop, restoring };
+  return { 
+    status, 
+    appCheckpoints, 
+    run, 
+    resume, 
+    fork, 
+    replay, 
+    restore, 
+    stop, 
+    restoring,
+    restoreError,
+    messages,
+    progressUpdates
+  };
 }

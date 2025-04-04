@@ -1,7 +1,7 @@
 from typing import Literal
 from langgraph.graph import StateGraph, END
-from reason_graph.state import ResearchState
-from reason_graph.nodes import (
+from super_agents.deep_research.reason_graph.state import ResearchState
+from super_agents.deep_research.reason_graph.nodes import (
     plan_research,
     prepare_steps,
     execute_search,

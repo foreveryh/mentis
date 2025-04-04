@@ -1,4 +1,6 @@
 import json
+from typing import Dict, Any, List, Optional
+from langchain_core.messages import BaseMessage, AIMessage, HumanMessage, ToolMessage
 from langgraph.types import StateSnapshot
 
 
@@ -110,4 +112,26 @@ def format_state_snapshot(snapshot: StateSnapshot):
         "interrupts": interrupts,
         "parent_config": snapshot.parent_config,
         "metadata": snapshot.metadata
+    }
+
+
+def stream_update_event(data: dict):
+    """为 DeepResearch Agent 的 StreamUpdateData 创建一个 stream_update 事件。
+
+    Args:
+        data: 从 add_stream_update 产生的、符合 StreamUpdateData 结构的字典。
+
+    Returns:
+        符合 SSE EventSourceResponse 格式的字典。
+    """
+    if not isinstance(data, dict):
+        # 如果传入的不是字典，返回一个错误事件
+        return {
+            "event": "error",
+            "data": json.dumps({"message": "Internal server error: Invalid stream update data type."})
+        }
+    
+    return {
+        "event": "stream_update",
+        "data": json.dumps(data, default=str)
     }
