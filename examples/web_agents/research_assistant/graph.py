@@ -6,11 +6,11 @@ from langchain_community.tools import TavilySearchResults
 from langgraph.checkpoint.memory import MemorySaver
 from core.tools.e2b_tool import E2BCodeInterpreterTool
 from core.tools.registry import register_tool, ToolCategory
-
+from core.llm.llm_manager import LLMManager
 
 load_dotenv()  # 自动加载 .env 文件
 # 初始化大模型
-model = ChatOpenAI(model="gpt-4o-mini")
+model = LLMManager().get_model("deepseek_v3")
 
 # 创建Tavily搜索工具
 tavily_search = TavilySearchResults(

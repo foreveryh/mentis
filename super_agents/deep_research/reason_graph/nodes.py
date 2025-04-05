@@ -143,7 +143,11 @@ async def execute_search(state: ResearchState) -> Dict[str, Any]:
     step_id = step.id
     query_str = query_obj.query
     
-    # Send running update
+    # 计算当前完成的步骤数和总步骤数，用于进度显示
+    completed_steps = state.get('completed_steps_count', 0)
+    total_steps = state.get('total_steps', 0)
+    
+    # Send running update with progress information
     running_updates = add_stream_update(state, {
         'id': step_id,
         'type': step_type,
@@ -151,6 +155,8 @@ async def execute_search(state: ResearchState) -> Dict[str, Any]:
         'title': f"Searching {step_type} for '{query_str}'",
         'query': query_str,
         'message': f"Searching {query_obj.source} sources...",
+        'completedSteps': completed_steps,
+        'totalSteps': total_steps,
     })
 
     results = []
@@ -218,7 +224,11 @@ async def perform_analysis(state: ResearchState) -> Dict[str, Any]:
     analysis_type = analysis_obj.type
     analysis_desc = analysis_obj.description
 
-    # Send running update
+    # 计算当前完成的步骤数和总步骤数，用于进度显示
+    completed_steps = state.get('completed_steps_count', 0)
+    total_steps = state.get('total_steps', 0)
+    
+    # Send running update with progress information
     running_updates = add_stream_update(state, {
         'id': step_id,
         'type': 'analysis',
@@ -226,6 +236,8 @@ async def perform_analysis(state: ResearchState) -> Dict[str, Any]:
         'title': f"Analyzing {analysis_type}",
         'analysisType': analysis_type,
         'message': f"Analyzing {analysis_type}...",
+        'completedSteps': completed_steps,
+        'totalSteps': total_steps,
     })
 
     prompt = f"""Perform a "{analysis_type}" analysis. Analysis description: "{analysis_desc}"
@@ -243,7 +255,10 @@ Generate findings (insight, evidence, confidence), implications, and limitations
         )
         # analysis_result = generate_structured_output(llm_creative, AnalysisResult, prompt) # If generate_structured_output is async
 
-        # Send completed update
+        # 更新完成步骤数
+        completed_steps = state.get('completed_steps_count', 0) + 1
+        
+        # Send completed update with progress information
         completed_updates = add_stream_update(state, {
             'id': step_id,
             'type': 'analysis',
@@ -253,7 +268,9 @@ Generate findings (insight, evidence, confidence), implications, and limitations
             # Simplify findings for streaming if needed, or send full object
             'findings': [f.dict() for f in analysis_result.findings], 
             'message': f"Analysis complete",
-            'overwrite': True
+            'overwrite': True,
+            'completedSteps': completed_steps,
+            'totalSteps': total_steps
         })
         
         all_updates = running_updates + completed_updates
@@ -291,7 +308,11 @@ async def analyze_gaps(state: ResearchState) -> Dict[str, Any]:
     all_search_results = state['search_results']
     analysis_steps_info = state['analysis_steps_planned'] # Get info about what analyses were done
 
-    # Send running update
+    # 计算当前完成的步骤数和总步骤数，用于进度显示
+    completed_steps = state.get('completed_steps_count', 0)
+    total_steps = state.get('total_steps', 0)
+    
+    # Send running update with progress information
     running_updates = add_stream_update(state, {
         'id': 'gap-analysis',
         'type': 'analysis',
@@ -299,6 +320,8 @@ async def analyze_gaps(state: ResearchState) -> Dict[str, Any]:
         'title': 'Research Gaps and Limitations',
         'analysisType': 'gaps',
         'message': 'Analyzing research gaps and limitations...',
+        'completedSteps': completed_steps,
+        'totalSteps': total_steps,
     })
 
     # Prepare info about analyses performed for the prompt
@@ -424,6 +447,10 @@ async def execute_gap_search(state: ResearchState) -> Dict[str, Any]:
     query_obj = state['additional_queries_planned'][idx]
     depth = state['depth'] # Should be 'advanced' here
     
+    # 计算当前完成的步骤数和总步骤数，用于进度显示
+    completed_steps = state.get('completed_steps_count', 0)
+    total_steps = state.get('total_steps', 0)
+    
     all_new_results: List[SearchStepResult] = []
     all_updates: List[StreamUpdate] = []
     
@@ -446,7 +473,7 @@ async def execute_gap_search(state: ResearchState) -> Dict[str, Any]:
         step_id = f"{base_id}-{source_type}" if query_obj.source == 'all' else base_id
         step_ids.append(step_id)
         
-        # Send running update (especially needed for 'all' breakdown)
+        # Send running update with progress information
         running_update = add_stream_update(state, {
             'id': step_id,
             'type': source_type,
@@ -454,6 +481,8 @@ async def execute_gap_search(state: ResearchState) -> Dict[str, Any]:
             'title': f"Additional {source_type} search for '{query_obj.query}'",
             'query': query_obj.query,
             'message': f"Searching {source_type} to fill gap: {query_obj.rationale}",
+            'completedSteps': completed_steps,
+            'totalSteps': total_steps,
         })
         all_updates.extend(running_update)
         
@@ -510,6 +539,8 @@ async def execute_gap_search(state: ResearchState) -> Dict[str, Any]:
                  'title': f"Additional {source_type} search failed for '{query_obj.query}'",
                  'query': query_obj.query,
                  'message': f"Error during gap search: {str(e)}",
+                 'completedSteps': completed_steps,
+                 'totalSteps': total_steps,
                  'overwrite': True
              })
              all_updates.extend(error_update)
@@ -532,7 +563,11 @@ async def synthesize_final_report(state: ResearchState) -> Dict[str, Any]:
     
     # This node is only reached if depth=='advanced' and gaps were found/searched
     
-    # Send running update
+    # 计算当前完成的步骤数和总步骤数，用于进度显示
+    completed_steps = state.get('completed_steps_count', 0)
+    total_steps = state.get('total_steps', 0)
+    
+    # Send running update with progress information
     running_updates = add_stream_update(state, {
         'id': 'final-synthesis',
         'type': 'analysis',
@@ -540,6 +575,8 @@ async def synthesize_final_report(state: ResearchState) -> Dict[str, Any]:
         'title': 'Final Research Synthesis',
         'analysisType': 'synthesis',
         'message': 'Synthesizing all research findings...',
+        'completedSteps': completed_steps,
+        'totalSteps': total_steps,
     })
 
     # Prepare gap analysis summary for prompt (avoid sending full objects if too large)
@@ -680,7 +717,8 @@ def finalize_basic_research(state: ResearchState) -> Dict[str, Any]:
         'completedSteps': final_completed_steps,
         'totalSteps': final_total_steps,
         'isComplete': True,
-        'overwrite': True 
+        'overwrite': True,
+        'timestamp': time.time()
     })
     return {"stream_updates": final_progress_update}
 
@@ -696,6 +734,10 @@ async def generate_final_markdown_report(state: ResearchState) -> Dict[str, Any]
     final_synthesis = state.get('final_synthesis')
     search_results = state.get('search_results', [])
     gap_analysis = state.get('gap_analysis')
+    
+    # 计算当前完成的步骤数和总步骤数，用于进度显示
+    completed_steps = state.get('completed_steps_count', 0)
+    total_steps = state.get('total_steps', 0)
 
     # --- 检查是否有 Synthesis 数据 ---
     if not final_synthesis:
@@ -704,6 +746,8 @@ async def generate_final_markdown_report(state: ResearchState) -> Dict[str, Any]
             'id': 'final-report-generation', 'type': 'report', 'status': 'completed',
             'title': 'Final Report Generation Skipped',
             'message': 'Skipped report generation because final synthesis data was missing.',
+            'completedSteps': completed_steps,
+            'totalSteps': total_steps,
             'overwrite': True, 'timestamp': time.time()
         })
         base_total_steps = state.get('total_steps', 0)
@@ -724,6 +768,8 @@ async def generate_final_markdown_report(state: ResearchState) -> Dict[str, Any]
         'status': 'running',
         'title': 'Generating Final Report',
         'message': 'Compiling research findings into the final report...',
+        'completedSteps': completed_steps,
+        'totalSteps': total_steps,
         'timestamp': time.time() # 添加时间戳
     })
     all_updates = list(running_updates) # 初始化 updates 列表
@@ -859,6 +905,8 @@ Generate the final Markdown research report now:"""
             'id': 'final-report-generation', 'type': 'report', 'status': 'completed',
             'title': 'Final Report Generated',
             'message': f'Successfully generated Markdown report ({len(markdown_content)} characters).',
+            'completedSteps': completed_steps,
+            'totalSteps': total_steps,
             'overwrite': True, 'timestamp': time.time() # 添加时间戳
         })
         all_updates.extend(completed_updates) # 添加到列表中
