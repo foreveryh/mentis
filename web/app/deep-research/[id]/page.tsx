@@ -189,18 +189,26 @@ export default function DeepResearchPage() {
 
     setStartupError(null); // Clear previous startup error on new attempt
     console.log("Effect: Starting restore/initial run check for thread:", threadId);
+    
+    // 添加日志: 检查 sessionStorage 中是否有主题
+    const initialTopicCheck = sessionStorage.getItem(`topic_for_${threadId}`);
+    console.log(`Initial sessionStorage check for topic_for_${threadId}:`, initialTopicCheck);
 
     restore(threadId)
         .then((restoredCheckpoints) => {
             console.log("Effect: Restore promise resolved.");
+            console.log("Restored checkpoints:", restoredCheckpoints);
             const hasMeaningfulHistory = restoredCheckpoints && restoredCheckpoints.length > 1;
+            console.log("Has meaningful history:", hasMeaningfulHistory);
 
             // --- Logic to potentially trigger run ---
             if (!hasMeaningfulHistory && !restoreError) {
                 console.log("Effect: Thread appears new based on checkpoints. Checking for topic...");
+                // 重要修复: 再次检查 sessionStorage，因为可能在 restore 过程中被其他代码修改
                 const initialTopic = sessionStorage.getItem(`topic_for_${threadId}`);
-                sessionStorage.removeItem(`topic_for_${threadId}`);
-
+                console.log(`Second check for topic_for_${threadId}:`, initialTopic);
+                
+                // 只有在确认要运行时才删除 sessionStorage
                 if (initialTopic) {
                     console.log(`Effect: Found initial topic: "${initialTopic}". Triggering run...`);
                     const initialMessages: Message[] = [{ type: 'user', content: initialTopic, id: `user-${crypto.randomUUID()}` }];
@@ -210,6 +218,8 @@ export default function DeepResearchPage() {
                         .then(() => {
                             console.log("Initial run command sent successfully.");
                             setInitialRunAttempted(true); // Set attempt complete on success
+                            // 成功运行后再删除 sessionStorage
+                            sessionStorage.removeItem(`topic_for_${threadId}`);
                         })
                         .catch(runError => {
                             console.error("Error detail from initial run call:", runError);
@@ -219,8 +229,29 @@ export default function DeepResearchPage() {
                         });
                 } else {
                     console.warn("Effect: Thread appears new, but no initial topic found.");
-                    setStartupError("Cannot start research: Initial topic is missing.");
-                    setInitialRunAttempted(true); // Set attempt complete as we can't proceed
+                    // 尝试从 URL 参数获取主题 (备用方案)
+                    const urlParams = new URLSearchParams(window.location.search);
+                    const topicFromUrl = urlParams.get('topic');
+                    
+                    if (topicFromUrl) {
+                        console.log(`Found topic from URL: "${topicFromUrl}"`);
+                        const initialMessages: Message[] = [{ type: 'user', content: topicFromUrl, id: `user-${crypto.randomUUID()}` }];
+                        const initialState: DeepResearchState = { messages: initialMessages };
+                        
+                        run({ thread_id: threadId, state: initialState, agent: "deep_research" })
+                            .then(() => {
+                                console.log("Initial run from URL param sent successfully.");
+                                setInitialRunAttempted(true);
+                            })
+                            .catch(runError => {
+                                console.error("Error starting from URL param:", runError);
+                                setStartupError(`Failed to start research: ${runError instanceof Error ? runError.message : 'Unknown error'}`);
+                                setInitialRunAttempted(true);
+                            });
+                    } else {
+                        setStartupError("Cannot start research: Initial topic is missing.");
+                        setInitialRunAttempted(true); // Set attempt complete as we can't proceed
+                    }
                 }
             } else {
                  // Existing thread or restore error occurred
