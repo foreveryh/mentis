@@ -25,7 +25,7 @@ import ThemeSwitcher from "./theme-switcher"; // 确认路径
 // 'id' 应与后端 load_agent 期望的名称匹配
 const availableAgents = [
   { id: 'chat', name: 'General Chatbot', description: '通用助理', icon: MessageSquare }, // 添加图标
-  { id: 'deep-research', name: 'Deep Research', description: '深度研究助理', icon: Bot }, // 添加图标
+  { id: 'deep_research', name: 'Deep Research', description: '深度研究助理', icon: Bot }, // 添加图标
   // 在这里添加更多 Agent
 ];
 // --- Agent 配置结束 ---
@@ -38,9 +38,20 @@ export function AppSidebar() {
 
   // 处理创建新聊天的函数 (保持不变)
   const handleAddNewChat = (agentId: string, agentName: string) => {
-    console.log(`Creating new chat for agent: ${agentName} (ID: ${agentId})`);
-    const newChat = addChat(agentId, agentName); // 传递 agentId
-    router.push(`/${agentId}/${newChat.id}`); // 导航到通用聊天页面
+    if (agentId === 'deep_research') {
+      // For Deep Research, navigate to the dedicated initiation page
+      const targetPath = '/deep-research/';
+      console.log(`Navigating from Sidebar to Deep Research initiation: ${targetPath}`);
+      router.push(targetPath);
+      // NOTE: We DO NOT call addChat here for deep_research
+    } else {
+      // For all other agents, create chat item and navigate to its specific ID page
+      console.log(`Creating new chat entry for agent: ${agentName}`);
+      const newChat = addChat(agentId, agentName); // Create entry in store
+      const targetPath = `/${agentId}/${newChat.id}`; // e.g., /default/abc987
+      console.log(`Navigating from Sidebar to: ${targetPath}`);
+      router.push(targetPath);
+    }
   };
 
   return (

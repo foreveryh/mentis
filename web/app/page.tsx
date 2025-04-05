@@ -23,7 +23,7 @@ import { BrainCircuit, Users, Wrench, BotMessageSquare, GitBranch, MessageSquare
 // --- Agent Configuration (Hardcoded for now) ---
 // 'id' should match the agent name expected by your backend API loader.
 const availableAgents = [
-  { id: 'default', name: 'ReAct Agent', description: 'A general purpose assistant for various tasks.', icon: MessageSquare },
+  { id: 'chat', name: 'ReAct Agent', description: 'A general purpose assistant for various tasks.', icon: MessageSquare },
   { id: 'deep_research', name: 'Deep Research', description: 'Performs in-depth research on a topic.', icon: BrainCircuit },
   // Add other agents here
   // { id: 'another_agent', name: 'Another Agent', description: 'Description here', icon: Users },
@@ -52,15 +52,26 @@ export default function WelcomePage() {
   // State to control Dialog open/closed status, useful for closing programmatically
   const [isAgentSelectorOpen, setIsAgentSelectorOpen] = useState(false);
 
-  // --- MODIFIED: Handler to create chat AND navigate ---
+  
+  // --- CORRECTED: Handler to create chat AND navigate dynamically ---
   const handleCreateChat = (agentId: string, agentName: string) => {
     console.log(`Creating new chat for agent: ${agentName} (ID: ${agentId})`);
-    // Assume addChat takes agentId and returns the new chat object
-    const newChat = addChat(`${agentId}`,`${agentName}`); // Create a slightly more descriptive name
-    // Close the dialog
-    setIsAgentSelectorOpen(false);
-    // Navigate to the chat page
-    router.push(`/chat/${newChat.id}`);
+
+    // 1. Call addChat - This matches the store definition.
+    //    Pass agentId first, then agentName. The store generates the chat name.
+    const newChat = addChat(agentId, agentName);
+
+    if (agentId === 'deep_research') {
+      const targetPath = '/deep-research/';
+      setIsAgentSelectorOpen(false);
+      router.push(targetPath); // Use the CORRECT dynamic path
+    } else {
+    // 2. Construct the dynamic navigation path using agentId
+      const targetPath = `/${agentId}/${newChat.id}`;
+      setIsAgentSelectorOpen(false);
+      router.push(targetPath); // Use the CORRECT dynamic path
+    }
+
   };
 
   return (
@@ -100,16 +111,13 @@ export default function WelcomePage() {
 
         {/* CTA Section --- MODIFIED --- */}
         <div className="text-center pt-4">
-          {/* Use Dialog component */}
           <Dialog open={isAgentSelectorOpen} onOpenChange={setIsAgentSelectorOpen}>
-            {/* Button triggers the Dialog */}
             <DialogTrigger asChild>
               <Button size="lg" className="px-8 py-3 text-lg">
                 Explore Agents
               </Button>
             </DialogTrigger>
-            {/* Dialog Content */}
-            <DialogContent className="sm:max-w-[425px] md:max-w-lg"> {/* Adjust max width */}
+            <DialogContent className="sm:max-w-[425px] md:max-w-lg">
               <DialogHeader>
                 <DialogTitle>Select an Agent</DialogTitle>
                 <DialogDescription>
@@ -123,6 +131,7 @@ export default function WelcomePage() {
                    return (
                      <button
                        key={agent.id}
+                       // Ensure onClick passes BOTH agent.id and agent.name to the handler
                        onClick={() => handleCreateChat(agent.id, agent.name)}
                        className="flex items-center p-4 rounded-lg border bg-card hover:bg-muted/50 dark:border-gray-700 dark:hover:bg-gray-800/60 transition-colors text-left w-full"
                      >
@@ -135,13 +144,6 @@ export default function WelcomePage() {
                    )
                  })}
               </div>
-              {/* Optional Footer with Close button
-              <DialogFooter>
-                 <DialogClose asChild>
-                     <Button type="button" variant="secondary">Close</Button>
-                 </DialogClose>
-              </DialogFooter>
-               */}
             </DialogContent>
           </Dialog>
         </div>
