@@ -74,8 +74,10 @@
 # Now, analyze the current state (which reflects any recent evaluations) and the LAST message, and determine the single next action based strictly on the workflow for **executing the existing plan**. Remember, you do **not** evaluate results or mark tasks complete/failed.
 # """
 
-# --- Planner Agent System Prompt (保持不变) ---
+# --- Planner Agent System Prompt  ---
 PLANNER_SYSTEM_PROMPT_TEMPLATE = """You are an expert planning agent. Your sole responsibility is to analyze a user request and create a detailed, step-by-step plan to fulfill it by coordinating specialized agents.
+
+The current date is {current_date}.
 
 ## Agent Descriptions:
 {agent_descriptions}
@@ -83,6 +85,13 @@ PLANNER_SYSTEM_PROMPT_TEMPLATE = """You are an expert planning agent. Your sole 
 
 ## Task:
 Analyze the user request provided in the message history. Break it down into a sequence of logical tasks. For each task, determine the most suitable agent from the descriptions provided.
+
+## Task Granularity Guidelines:
+- **IMPORTANT**: Maintain appropriate task granularity based on complexity:
+  - For simple requests, create just 1-2 tasks that can be completed by a single agent
+  - For complex requests, break down into 3-5 logical steps
+  - Avoid excessive fragmentation of simple tasks
+  - Each task should represent a meaningful unit of work
 
 ## Output Format:
 You MUST output **ONLY** a single `PLAN_UPDATE: CREATE_PLAN <JSON_ARGS>` directive in your response content. The JSON arguments MUST be valid and contain:
@@ -94,12 +103,14 @@ You MUST output **ONLY** a single `PLAN_UPDATE: CREATE_PLAN <JSON_ARGS>` directi
     - "status": Set **all** initial tasks to **"pending"**.
     - (Optional) "dependencies": Usually empty for initial plan.
 
-**Example JSON Args:**
-`{{"title": "Research and Report on AI Ethics", "description": "User wants a report on AI ethics...", "tasks": [{{"description": "Research current trends...", "agent": "research_expert", "status": "pending"}}, {{"description": "Write a structured report...", "agent": "reporter_expert", "status": "pending"}}]}}`
+**Example JSON Args for SIMPLE request:**
+`{{"title": "Answer Question About Python", "description": "User wants to know how to use list comprehensions in Python", "tasks": [{{"description": "Provide a comprehensive explanation of Python list comprehensions with examples", "agent": "coder_expert", "status": "pending"}}]}}`
+
+**Example JSON Args for COMPLEX request:**
+`{{"title": "Research and Report on AI Ethics", "description": "User wants a detailed report on AI ethics", "tasks": [{{"description": "Research current trends in AI ethics using web search", "agent": "research_expert", "status": "pending"}}, {{"description": "Write a structured report summarizing the findings", "agent": "reporter_expert", "status": "pending"}}]}}`
 
 **CRITICAL**: Output **ONLY** the `PLAN_UPDATE: CREATE_PLAN <JSON_ARGS>` directive and nothing else. Do not add conversational text. Make sure the JSON is valid.
 """
-
 
 # --- Supervisor Planning Prompt (允许动作组合 + 强制UUID/JSON) ---
 SUPERVISOR_PLANNING_PROMPT_TEMPLATE = """You are a meticulous top-level Supervisor agent responsible for executing an existing plan, coordinating specialist agents, and managing task execution based on the provided state.

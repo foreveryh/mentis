@@ -3,8 +3,9 @@ import inspect
 import re
 import functools
 import uuid
-import asyncio # <--- 导入 asyncio
-import anyio   # <--- 导入 anyio (需要 pip install anyio)
+import asyncio
+import anyio
+import traceback 
 from typing import Any, Callable, List, Optional, Type, Union, Dict, Literal, Sequence, cast # <--- 导入 cast
 
 from langchain_core.language_models import BaseChatModel, LanguageModelLike
