@@ -2,13 +2,13 @@
 requires = ["setuptools>=42", "wheel"]
 build-backend = "setuptools.build_meta"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.11"
 
 [project]
 name = "mentis"
 version = "0.1.0"
 description = "A Multi-Agents project based on langgraph"
-requires-python = ">=3.9"
+requires-python = ">=3.11"
 dependencies = [
     "dotenv>=0.9.9",
     "langchain-community>=0.3.19",
@@ -32,6 +32,8 @@ dependencies = [
     "exa-py>=1.9.1",
     "tavily-python>=0.5.1",
     "replicate>=1.0.4",
+    "langchain-mcp-adapters>=0.0.7",
+    "mcp>=1.6.0",
 ]
 
 [tool.setuptools]

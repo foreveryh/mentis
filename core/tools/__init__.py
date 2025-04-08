@@ -76,13 +76,13 @@ def preregister_core_tools():
         print(f"预注册文件系统工具失败: {e}")
     
     # 注册代码解释器工具
-    # try:
-    #     # Python REPL工具
-    #     python_repl = ExecPython()
-    #     register_tool(python_repl, ToolCategory.CODE_INTERPRETER)
-    #     print(f"已预注册工具: {python_repl.name} (类别: {ToolCategory.CODE_INTERPRETER.value})")
-    # except Exception as e:
-    #     print(f"预注册Python REPL工具失败: {e}")
+    try:
+        # Python REPL工具
+        python_repl = ExecPython()
+        register_tool(python_repl, ToolCategory.CODE_INTERPRETER)
+        print(f"已预注册工具: {python_repl.name} (类别: {ToolCategory.CODE_INTERPRETER.value})")
+    except Exception as e:
+        print(f"预注册Python REPL工具失败: {e}")
 
     # # 注册代码解释器工具
     # try:
