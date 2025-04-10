@@ -1,10 +1,10 @@
-# Mentis Multi-Agent Framework
+# Mentis - Agent Development Kit
 
 [![Python Version](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) 
 ## 概述 (Overview)
 
-Mentis 是一个基于 LangGraph 构建的、可扩展的多 Agent (Multi-Agent) 协作框架。它的核心是一个**状态驱动的规划型 Supervisor Agent**，负责理解用户复杂请求、制定执行计划，并智能地协调一组具有不同专业能力的子 Agent (Specialist Agents) 来共同完成任务。
+Mentis 是一个基于 LangGraph 构建的、可扩展的多 Agent ADK(Agent Development Kit)。它的核心是一个**状态驱动的规划型 Supervisor Agent**，负责理解用户复杂请求、制定执行计划，并智能地协调一组具有不同专业能力的子 Agent (Specialist Agents) 来共同完成任务。
 
 此框架旨在实现复杂任务的自动化处理，通过 Agent 间的协作提供比单一 Agent 更强大、更灵活的问题解决能力。
 
