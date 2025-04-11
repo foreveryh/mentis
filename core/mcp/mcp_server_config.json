@@ -1,0 +1,37 @@
+{
+    "fetch_via_uvx": {
+      "id": "fetch-uvx-stdio",
+      "type": "mcp-server",
+      "description": "Fetch Server launched by uvx via stdio",
+      "connection": {
+        "transport": "stdio",
+        "command": "uvx",
+        "args": [
+          "mcp-server-fetch"
+        ],
+        "env": null,
+        "cwd": null,
+        "encoding": "utf-8",
+        "encoding_error_handler": "strict",
+        "timeout": 45
+      }
+    },
+    "everything": {
+      "id": "everything-stdio",
+      "type": "mcp-server",
+      "description": "Everything Server",
+      "connection": {
+        "transport": "stdio",
+        "command": "npx",
+        "args": [
+          "-y",
+          "@modelcontextprotocol/server-everything"
+        ],
+        "env": null,
+        "cwd": null,
+        "encoding": "utf-8",
+        "encoding_error_handler": "strict",
+        "timeout": 45
+      }
+    }
+  }
