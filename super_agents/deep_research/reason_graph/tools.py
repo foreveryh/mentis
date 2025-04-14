@@ -67,7 +67,7 @@ def initialize_llms() -> Tuple[Optional[RunnableSerializable], Optional[Runnable
     Returns: (llm, llm_creative) or (None, None) on failure.
     """
     provider = os.getenv("LLM_PROVIDER", "openai").lower()
-    model_name = os.getenv("LLM_MODEL_NAME", "gpt-4o") # Sensible default
+    model_name = os.getenv("LLM_MODEL_NAME", "gpt-4.1-mini") # Sensible default
     api_key = LLM_API_KEY_FROM_ENV # Use generic key first
     base_url = os.getenv("LLM_BASE_URL") # For compatible APIs
 

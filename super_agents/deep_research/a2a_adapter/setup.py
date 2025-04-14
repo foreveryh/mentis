@@ -1,6 +1,7 @@
 # super_agents/deep_research/a2a_adapter/setup.py
 
 import logging
+import asyncio
 from typing import Dict, Any, Optional
 
 # 导入A2A相关组件
@@ -8,6 +9,7 @@ from core.a2a.types import (
     AgentCard, AgentCapabilities, AgentSkill, Task # Import Task for type hinting
 )
 from core.a2a.server.server import A2AServer
+from starlette.middleware.cors import CORSMiddleware
 
 # 导入DeepResearch适配器
 from super_agents.deep_research.a2a_adapter.deep_research_task_manager import DeepResearchTaskManager
@@ -112,6 +114,16 @@ def setup_a2a_server(host: str = "127.0.0.1", port: int = 8000) -> A2AServer:
         agent_card=agent_card,
         task_manager=task_manager
     )
+    
+    # 添加CORS中间件支持
+    server.app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],  # 允许所有前端域名访问，生产环境中应该限制为特定域名
+        allow_credentials=True,
+        allow_methods=["*"],  # 允许所有HTTP方法
+        allow_headers=["*"],  # 允许所有HTTP头
+    )
+    print("已添加CORS支持，允许来自所有域的请求")
 
     print(f"DeepResearch A2A服务器实例已创建，监听地址 http://{host}:{port}")
     return server
