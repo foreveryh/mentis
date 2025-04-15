@@ -159,6 +159,10 @@ https://github.com/user-attachments/assets/2a685709-5be0-43a3-9e2d-934ef5fa3315
 
 #### 专用 Web 界面
 
+
+https://github.com/user-attachments/assets/640365c7-839b-4765-b9ac-ee0ac961ceb8
+
+
 我们还开发了一个基于 Next.js 的现代 Web 界面，专门用于与 DeepResearch A2A 服务交互：
 
 * 提供直观的用户界面，用于输入研究主题和启动研究任务
