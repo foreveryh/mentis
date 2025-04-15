@@ -17,6 +17,7 @@ Mentis 是一个基于 LangGraph 构建的、可扩展的多 Agent ADK(Agent Dev
 * **可配置 LLM**: 支持通过 `LLMManager` (或环境变量) 配置和切换不同的 LLM Provider (OpenAI, DeepSeek, XAI Grok via compatible endpoint) 和模型。
 * **持久化支持**: 基于 LangGraph 的 Checkpointer 机制，可以实现对话状态和计划的持久化。
 * **清晰的执行流程**: Planner -> Supervisor -> (Handoff -> Agent -> Evaluator -> Supervisor 循环) -> 最终输出/Reporter。
+* **A2A 协议支持**: 实现了 Google 的 Agent-to-Agent (A2A) 协议，使 Mentis Agents 能够与其他支持 A2A 协议的系统进行互操作。
 
 ## 架构概览 (Architecture Overview)
 
@@ -95,6 +96,7 @@ python examples/state_based_supervisor_examples/03_multi_agents.py
 mentis/
 ├── api/             # (可选) API 服务相关代码
 ├── core/            # 核心框架代码
+│   ├── a2a/         # A2A 协议的客户端和服务器实现
 │   ├── agents/      # Agent 定义 (base, react, supervisor, sub-agents)
 │   │   ├── base/
 │   │   ├── state_based_supervisor/ # Supervisor 相关 (graph, node, planner, evaluator)
@@ -106,7 +108,11 @@ mentis/
 ├── examples/        # 示例和测试脚本
 │   └── state_based_supervisor_examples/
 │       └── 03_multi_agents.py # 我们使用的测试脚本
+├── super_agents/    # 独立功能型 Agent 实现
+│   └── deep_research/ # DeepResearch Agent 实现
+│       └── a2a_adapter/ # DeepResearch 的 A2A 协议适配器
 ├── web/             # (可选) Web 客户端代码
+├── web_for_a2a/     # 基于 A2A 协议的 Web 界面
 ├── .env.example     # 环境变量示例
 ├── requirements.txt # Python 依赖
 └── README.md        # 本文件
@@ -137,20 +143,56 @@ https://github.com/user-attachments/assets/2a685709-5be0-43a3-9e2d-934ef5fa3315
     5.  **(可选) 补充搜索 (Gap Filling)**: 针对知识空白进行额外的、更具针对性的搜索。
     6.  **最终综合 (Final Synthesis)**: 整合所有信息，提炼关键发现和不确定性。
     7.  **报告生成 (Report Generation)**: 将综合结果和上下文信息，撰写成一份详细的、带引用的 Markdown 研究报告。
-* **当前状态**: 该 Agent 的核心逻辑和节点已基本实现（在我们之前的开发过程中）。
+* **当前状态**: 该 Agent 的核心逻辑和节点已基本实现，并且现在支持 A2A 协议和专用 Web 界面。
 
-**如何体验 DeepResearch Agent (独立运行):**
+#### A2A 协议支持
 
-(注意：以下步骤假设您保留了或可以恢复用于独立运行 DeepResearch Agent 的入口脚本，例如基于我们早期开发的 `main.py` 或创建一个新的 `run_deep_research.py`。您可能需要调整脚本以适应 `core` 代码库的最新更改。)
+我们为 DeepResearch Agent 实现了完整的 A2A 协议适配器，使其能够：
 
-1.  **确保环境配置**: 确认您的 `.env` 文件中包含了 DeepResearch Agent 所需的所有 API Keys（例如 `OPENAI_API_KEY`/`DEEPSEEK_API_KEY`, `TAVILY_API_KEY`, `EXA_API_KEY`）。
-2.  **找到/创建运行脚本**: 找到或创建一个专门用于启动 DeepResearch Agent 的 Python 脚本。
-3.  **运行脚本**: 在项目根目录执行：
-    ```bash
-    python super_agents/deep_research/main.py
-    ```
-4.  **输入主题**: 根据提示输入您想研究的主题。
-5.  **查看结果**: 等待 Agent 执行完毕，它生成的 Markdown 报告通常会保存在目录下的 `output/` 文件夹中。
+* 作为标准的 A2A 服务被发现和调用
+* 通过 `tasks/send` 和 `tasks/sendSubscribe` 端点接收研究任务
+* 提供实时的流式研究进度更新
+* 返回结构化的研究结果
+* 支持推送通知机制
+
+这使得 DeepResearch Agent 可以轻松地与其他支持 A2A 协议的系统（如 Google Assistant）集成，或者被自定义的前端应用调用。
+
+#### 专用 Web 界面
+
+我们还开发了一个基于 Next.js 的现代 Web 界面，专门用于与 DeepResearch A2A 服务交互：
+
+* 提供直观的用户界面，用于输入研究主题和启动研究任务
+* 实时显示研究进度和中间更新（通过 Server-Sent Events）
+* 美观地展示最终生成的研究报告
+* 演示了如何在前端应用中使用浏览器原生 API 处理 A2A 流式响应
+
+**如何体验 DeepResearch Agent:**
+
+1. **独立运行模式**:
+   * 确保环境配置: 确认您的 `.env` 文件中包含了所需的所有 API Keys（例如 `OPENAI_API_KEY`/`DEEPSEEK_API_KEY`, `TAVILY_API_KEY`, `EXA_API_KEY`）。
+   * 运行脚本: 在项目根目录执行：
+     ```bash
+     python super_agents/deep_research/main.py
+     ```
+   * 输入主题并查看结果: 生成的报告通常会保存在 `output/` 文件夹中。
+
+2. **A2A 服务模式**:
+   * 启动 A2A 服务器:
+     ```bash
+     cd super_agents/deep_research/a2a_adapter
+     python run_server.py
+     ```
+   * 服务器将在默认端口（通常是 8000）启动，并提供符合 A2A 规范的 API 端点。
+
+3. **Web 界面模式**:
+   * 确保 A2A 服务器正在运行
+   * 启动 Web 界面:
+     ```bash
+     cd web_for_a2a
+     npm install
+     npm run dev
+     ```
+   * 在浏览器中访问 http://localhost:3000/deepresearch 使用图形界面与 DeepResearch Agent 交互。
 
 ## 未来工作 (Future Work / Contributing)
 
