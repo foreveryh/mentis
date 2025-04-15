@@ -34,6 +34,9 @@ dependencies = [
     "replicate>=1.0.4",
     "langchain-mcp-adapters>=0.0.7",
     "mcp>=1.6.0",
+    "playwright>=1.51.0",
+    "aioboto3>=14.1.0",
+    "pillow>=11.2.1",
 ]
 
 [tool.setuptools]
