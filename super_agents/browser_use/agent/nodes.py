@@ -13,7 +13,7 @@ from .schemas import (
 from .prompts import create_agent_prompt
 # --- CORRECTED LLM IMPORT ---
 # Import only the necessary functions/classes that actually exist in llm.py
-from ..llm import generate_structured_output # <--- Removed LLMProvider from import
+from ..llm import generate_structured_output
 
 # Import the correct Browser from the browser subdirectory
 from ..browser.browser import Browser

@@ -47,12 +47,14 @@ The value of the "action" key MUST be an object matching one of the following ac
 - Scroll: {{"type": "scroll", "direction": "<up|down|left|right>"}}
 - Finish: {{"type": "finish", "result": "<final_answer_or_summary>"}}
 - Error: {{"type": "error", "message": "<error_description>"}} (Use if you detect an unrecoverable error or loop)
+- GetContent: {{"type": "get_content", "description": "<reason>"}}
 
-**Important Selector Guidance for 'click'/'type':**
-1.  **Prefer Robust CSS:** Try to use stable attributes like `id`, `name`, or ARIA roles (`[role='button']`).
-2.  **Combine `x-pw-id` and Text:** If using the DOM view, prefer combining `x-pw-id` with text: `a[x-pw-id='pw-16']:has-text('new')`.
-3.  **Use Text:** If IDs seem unstable, use visible text: `a:has-text('new')`.
-4.  **Consider Visual Elements:** If a target seems hard to select via DOM/AX, you might refer to a Visual Element ID (e.g., `cv-5`) in your reasoning or description, although the action still requires a CSS selector for Playwright execution. (Future actions might directly use coordinates if implemented).
+**Important Task Handling Guidance:**
+1.  **Identify elements** using the DOM, AX Tree (if available), and Visual Elements. Use robust selectors as previously guided.
+2.  **If the task requires reading or extracting content that might extend beyond the current view (e.g., '摘录全文', 'find all items', 'read the article'), and you haven't finished scrolling, your next action should likely be to SCROLL DOWN.** Use: `{{"action": {{"type": "scroll", "direction": "down"}}}}`
+3.  Only use `get_content` if you believe scrolling will not help or if you need to re-analyze after a non-scroll action.
+4.  Once you believe you have scrolled enough and have all necessary information visible in the content provided, proceed with the extraction or final action.
+5.  If the task is complete, use the 'finish' action.
 
 Example Response:
 ```json
@@ -61,6 +63,12 @@ Example Response:
     "type": "click",
     "selector": "a[x-pw-id='pw-16']:has-text('new')",
     "description": "Click the 'new' link, corresponds to visual element cv-3"
+  }}
+}}
+{{
+  "action": {{
+    "type": "scroll",
+    "direction": "down"
   }}
 }}
 ```
