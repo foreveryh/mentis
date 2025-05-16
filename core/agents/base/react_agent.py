@@ -14,7 +14,6 @@ from langgraph.prebuilt.chat_agent_executor import (
     StructuredResponseSchema,
 )
 from core.agents.base.base_agent import BaseAgent
-from core.agents.base.create_react_agent_wrapper import CreateReactAgentWrapper
 import logging
 logger = logging.getLogger(__name__)
 
